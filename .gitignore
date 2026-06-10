@@ -1,0 +1,20 @@
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python (Futuro)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Supabase
+supabase/.temp/
