@@ -10,11 +10,21 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
+    "@turf/area": "^7.3.5",
+    "@turf/bbox": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
+    "@turf/turf": "^7.3.5",
+    "mapbox-gl": "^3.24.0",
+    "mapbox-gl-draw-circle": "^1.1.2",
+    "mapbox-gl-draw-rectangle-mode": "^1.0.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/mapbox__mapbox-gl-draw": "^1.4.9",
+    "@types/mapbox-gl": "^3.4.1",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

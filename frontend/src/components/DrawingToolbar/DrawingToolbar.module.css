@@ -1,0 +1,112 @@
+.toolbarWrapper {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  z-index: 10; /* Above map canvas, below sidebar (z=20) */
+  pointer-events: none; /* Let map events pass through except on the buttons */
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  background-color: #1E222D; /* TradingView dark color */
+  border-radius: 6px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  padding: 4px 0;
+  pointer-events: auto;
+  border: 1px solid #2A2E39;
+}
+
+.toolButton {
+  background: transparent;
+  border: none;
+  color: #B2B5BE; /* TradingView inactive icon color */
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.toolButton:hover {
+  background-color: #2A2E39;
+  color: #D1D4DC;
+}
+
+.toolButton.active {
+  color: #2962FF; /* TradingView active blue */
+  background-color: rgba(41, 98, 255, 0.1);
+}
+
+.divider {
+  width: 24px;
+  height: 1px;
+  background-color: #2A2E39;
+  border: none;
+  margin: 4px auto;
+}
+
+.toolGroup {
+  position: relative;
+}
+
+.flyoutArrow {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  font-size: 8px;
+  color: #787B86;
+}
+
+.flyoutMenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 4px;
+  background-color: #1E222D;
+  border-radius: 6px;
+  box-shadow: 4px 4px 10px rgba(0,0,0,0.4);
+  padding: 8px 0;
+  width: 180px;
+  border: 1px solid #2A2E39;
+  z-index: 100;
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.flyoutHeader {
+  color: #787B86;
+  font-size: 10px;
+  padding: 4px 16px;
+  letter-spacing: 0.5px;
+}
+
+.flyoutItem {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #D1D4DC;
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+  text-align: left;
+}
+
+.flyoutItem:hover {
+  background-color: #2A2E39;
+}
+
+.flyoutItem.activeFlyout {
+  color: #2962FF;
+}
