@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mapbox/mapbox-gl-draw": "^1.5.1",
+    "@supabase/supabase-js": "^2.108.2",
     "@turf/area": "^7.3.5",
     "@turf/bbox": "^7.3.5",
     "@turf/helpers": "^7.3.5",
@@ -19,7 +20,8 @@
     "mapbox-gl-draw-circle": "^1.1.2",
     "mapbox-gl-draw-rectangle-mode": "^1.0.4",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

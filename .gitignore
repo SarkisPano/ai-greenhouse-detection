@@ -4,17 +4,34 @@ dist/
 dist-ssr/
 *.local
 
-# Python (Futuro)
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 venv/
 env/
 .env
+.env.*
+!.env.example
+!ai-engine/.env.example
+
+# AI Engine Raw Datasets & Cache
+ai-engine/__pycache__/
+ai-engine/dataset_images/
+ai-engine/dataset_images_v2/
+ai-engine/dataset_images_v3/
+ai-engine/dataset_images_v6/
+ai-engine/public/
+ai-engine/*.png
+ai-engine/*.jpg
 
 # OS Files
 .DS_Store
 Thumbs.db
 
-# Supabase
+# Supabase Local
 supabase/.temp/
+supabase/.branches/
+
+# Local backend repo clone
+backend/

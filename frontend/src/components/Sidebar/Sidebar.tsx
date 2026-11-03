@@ -7,8 +7,13 @@ interface SidebarProps {
   onToggle: () => void;
   zoneAreaHa: number;
   isScanning: boolean;
+  scanProgress?: { percent: number; text: string } | null;
   scanResult: ScanResult | null;
-  onScan: () => void;
+  confidenceThreshold?: number;
+  onConfidenceThresholdChange?: (val: number) => void;
+  isAddingManual?: boolean;
+  onToggleAddManual?: () => void;
+  onScan: (draftName?: string) => void;
   savedZones: SavedZone[];
   onSaveZone: (name: string) => void;
   onLoadZone: (zone: SavedZone) => void;
@@ -20,16 +25,21 @@ interface SidebarProps {
   onDeleteZone: (id: string) => void;
   plasticPercent: number;
   onPlasticPercentChange: (val: number) => void;
+  autoSaveStatus?: 'idle' | 'saving' | 'saved';
+  onExportExcel: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
-  isOpen, onToggle, zoneAreaHa, isScanning, scanResult, onScan,
-  savedZones, onSaveZone, onLoadZone, canSave,
+  isOpen, onToggle, zoneAreaHa, isScanning, scanProgress, scanResult,
+  confidenceThreshold = 40, onConfidenceThresholdChange,
+  isAddingManual = false, onToggleAddManual,
+  onScan, savedZones, onSaveZone, onLoadZone, canSave,
   activeZoneId, activeZoneName, onUpdateZone, onCancelEdit, onDeleteZone,
-  plasticPercent, onPlasticPercentChange
+  plasticPercent, onPlasticPercentChange, autoSaveStatus = 'idle', onExportExcel
 }) => {
   const [view, setView] = useState<'main' | 'library'>('main');
   const [zoneName, setZoneName] = useState('');
+  const [justSavedFeedback, setJustSavedFeedback] = useState(false);
   
   // Estado para el ancho del panel redimensionable
   const [sidebarWidth, setSidebarWidth] = useState(340);
@@ -73,16 +83,21 @@ const Sidebar: React.FC<SidebarProps> = ({
     e.preventDefault();
   };
 
+  const triggerSavedFeedback = () => {
+    setJustSavedFeedback(true);
+    setTimeout(() => setJustSavedFeedback(false), 2200);
+  };
+
   const handleSave = () => {
     if (zoneName.trim() === '') return;
-    onSaveZone(zoneName);
-    setView('library'); 
+    onSaveZone(zoneName.trim());
+    triggerSavedFeedback();
   };
 
   const handleUpdate = () => {
     if (zoneName.trim() === '') return;
-    onUpdateZone(zoneName);
-    setView('library'); 
+    onUpdateZone(zoneName.trim());
+    triggerSavedFeedback();
   };
 
   if (view === 'library') {
@@ -135,24 +150,25 @@ const Sidebar: React.FC<SidebarProps> = ({
         className={`${styles.sidebarContainer} ${isOpen ? styles.open : styles.closed}`}
         style={{ width: `${sidebarWidth}px`, marginLeft: isOpen ? '0px' : `-${sidebarWidth}px` }}
       >
-        {/* Resizer Handle */}
         <div className={styles.resizer} onMouseDown={startResizing} />
 
         <div className={styles.header}>
-          <h2>Detección Inteligente</h2>
-          <p>de Invernaderos</p>
+          <div className="flex items-start justify-between w-full">
+            <div>
+              <h2>Detección Inteligente</h2>
+              <p>de Invernaderos</p>
+            </div>
+          </div>
           <button 
             className={styles.secondaryButton} 
-            onClick={() => setView('library')}
+            onClick={() => setView(view === 'main' ? 'library' : 'main')}
             style={{marginTop: '0.8rem', width: '100%'}}
           >
-            Mis Zonas Guardadas
+            {view === 'main' ? `📁 Mis Zonas Guardadas (${savedZones.length})` : 'Volver a Escanear'}
           </button>
         </div>
 
         <div className={styles.content}>
-          
-          {/* SECCIÓN DE GUARDADO DE ZONA */}
           {canSave && (
             <div className={styles.saveSection}>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -183,7 +199,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onClick={handleUpdate}
                     style={{ flex: 1 }}
                   >
-                    Actualizar
+                    {justSavedFeedback ? '✓ Actualizado' : 'Actualizar'}
                   </button>
                   <button 
                     className={styles.saveButton} 
@@ -201,8 +217,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                   disabled={zoneName.trim() === ''}
                   onClick={handleSave}
                 >
-                  Guardar Nueva Zona
+                  {justSavedFeedback ? '✓ Zona Guardada' : 'Guardar Nueva Zona'}
                 </button>
+              )}
+
+              {activeZoneId && autoSaveStatus !== 'idle' && (
+                <div style={{ fontSize: '0.72rem', color: '#10b981', textAlign: 'right' }}>
+                  {autoSaveStatus === 'saving' ? '⏳ Guardando cambios...' : '✓ Cambios guardados automáticamente'}
+                </div>
               )}
             </div>
           )}
@@ -214,6 +236,84 @@ const Sidebar: React.FC<SidebarProps> = ({
             </p>
             <span className={styles.metricSub}>Hectáreas (ha)</span>
           </div>
+
+          {isScanning && (
+            <div className={styles.metricCard} style={{ borderLeft: '3px solid var(--color-primary)', background: 'rgba(16, 185, 129, 0.06)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+                <h3 style={{ margin: 0, color: 'var(--color-primary)' }}>Progreso del Escaneo IA</h3>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                  {scanProgress?.percent ?? 5}%
+                </span>
+              </div>
+              <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '999px', overflow: 'hidden', marginBottom: '0.45rem' }}>
+                <div
+                  style={{
+                    width: `${ Math.max(5, Math.min(100, scanProgress?.percent ?? 5)) }%`,
+                    height: '100%',
+                    backgroundColor: 'var(--color-primary)',
+                    borderRadius: '999px',
+                    transition: 'width 0.4s ease'
+                  }}
+                />
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#d1d5db', display: 'block' }}>
+                {scanProgress?.text || 'Iniciando motor de detección satelital...'}
+              </span>
+            </div>
+          )}
+
+          {scanResult && onConfidenceThresholdChange && (
+            <div className={styles.metricCard} style={{ borderLeft: '3px solid var(--color-primary)', background: 'rgba(255,255,255,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <h3 style={{ margin: 0 }}>Filtro de Confianza</h3>
+                <span style={{ 
+                  fontWeight: 'bold', 
+                  fontSize: '0.95rem',
+                  color: confidenceThreshold >= 70 ? '#00C853' : confidenceThreshold >= 50 ? '#FFD600' : '#FF6D00'
+                }}>
+                  ≥ {confidenceThreshold}%
+                </span>
+              </div>
+              <input 
+                type="range" 
+                min="30" 
+                max="90" 
+                step="5" 
+                value={confidenceThreshold}
+                onChange={(e) => onConfidenceThresholdChange(Number(e.target.value))}
+                style={{ width: '100%', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.2rem' }}>
+                <span>30% (Exhaustivo)</span>
+                <span>90% (Estricto)</span>
+              </div>
+            </div>
+          )}
+
+          {scanResult && onToggleAddManual && (
+            <button 
+              onClick={onToggleAddManual}
+              style={{
+                width: '100%',
+                padding: '0.65rem 1rem',
+                marginBottom: '0.8rem',
+                borderRadius: '6px',
+                border: isAddingManual ? '2px solid #00C853' : '1px solid var(--color-border)',
+                backgroundColor: isAddingManual ? 'rgba(0, 200, 83, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                color: isAddingManual ? '#00C853' : 'var(--color-text-main)',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {isAddingManual ? '✕ Cancelar Dibujo Manual' : '➕ Marcar Invernadero Faltante'}
+            </button>
+          )}
           
           <div className={styles.metricCard}>
             <h3>Invernaderos Detectados</h3>
@@ -225,7 +325,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   {scanResult ? scanResult.count : '--'}
                 </p>
                 <span className={styles.metricSub}>
-                  {scanResult ? 'Identificados por IA' : 'Pendiente de escaneo'}
+                  {scanResult ? 'Identificados en la zona' : 'Pendiente de escaneo'}
                 </span>
               </>
             )}
@@ -274,7 +374,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           <button 
             className={styles.scanButton} 
-            onClick={onScan}
+            onClick={() => onScan(zoneName)}
             disabled={zoneAreaHa === 0 || isScanning}
           >
             {isScanning ? 'Escaneando...' : 'Escanear Zona con IA'}
@@ -282,7 +382,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className={styles.footer}>
-          <button className={styles.primaryButton} disabled={!scanResult}>
+          <button className={styles.primaryButton} disabled={!scanResult} onClick={onExportExcel}>
             Generar Reporte Excel
           </button>
         </div>

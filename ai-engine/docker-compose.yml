@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 5000 --reload
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SUPABASE_URL=${SUPABASE_URL:-http://host.docker.internal:8000}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE}
+      - MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}
+      - ROBOFLOW_API_KEY=${ROBOFLOW_API_KEY}
+      - ROBOFLOW_PROJECT_ID=${ROBOFLOW_PROJECT_ID:-deteccion-de-invernaderos}
+      - ROBOFLOW_VERSION=${ROBOFLOW_VERSION:-6}
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: celery -A tasks worker --loglevel=info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SUPABASE_URL=${SUPABASE_URL:-http://host.docker.internal:8000}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE}
+      - MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}
+      - ROBOFLOW_API_KEY=${ROBOFLOW_API_KEY}
+      - ROBOFLOW_PROJECT_ID=${ROBOFLOW_PROJECT_ID:-deteccion-de-invernaderos}
+      - ROBOFLOW_VERSION=${ROBOFLOW_VERSION:-6}
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:

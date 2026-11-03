@@ -13,16 +13,16 @@ const DrawText = {
     return {};
   },
 
-  onClick(state: any, e: any) {
+  onClick(_state: any, e: any) {
     this.map.fire('draw.text_prompt', { lngLat: e.lngLat });
     this.changeMode('simple_select');
   },
 
-  onStop(state: any) {
+  onStop(_state: any) {
     this.activateUIButton();
   },
 
-  toDisplayFeatures(state: any, geojson: any, display: any) {
+  toDisplayFeatures(_state: any, geojson: any, display: any) {
     display(geojson);
   },
 } as any;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import styles from './DrawingToolbar.module.css';
 
 interface DrawingToolbarProps {
@@ -7,14 +7,13 @@ interface DrawingToolbarProps {
 }
 
 const DrawingToolbar: React.FC<DrawingToolbarProps> = ({ drawRef, mapRef }) => {
-  const [currentMode, setCurrentMode] = useState('simple_select');
-  const [showShapesMenu, setShowShapesMenu] = useState(false);
+  const [activeTool, setActiveTool] = useState<string>('simple_select');
 
   useEffect(() => {
     if (!mapRef.current) return;
     
     const handleModeChange = (e: any) => {
-      setCurrentMode(e.mode);
+      setActiveTool(e.mode);
     };
     
     mapRef.current.on('draw.modechange', handleModeChange);
@@ -43,19 +42,11 @@ const DrawingToolbar: React.FC<DrawingToolbarProps> = ({ drawRef, mapRef }) => {
     };
   }, [mapRef, drawRef]);
 
-  const [activeTool, setActiveTool] = useState<string>('simple_select');
-
   const changeMode = (mode: string) => {
     if (drawRef.current) {
-      if (mode === 'draw_brush') {
-        // Pass current brush options (color and width) to the custom brush mode
-        drawRef.current.changeMode(mode, { color: brushOptions.color, width: brushOptions.width });
-      } else {
-        drawRef.current.changeMode(mode);
-      }
+      drawRef.current.changeMode(mode);
       setActiveTool(mode);
     }
-    setShowShapesMenu(false);
   };
 
   const trash = (e: React.MouseEvent) => {
@@ -64,14 +55,6 @@ const DrawingToolbar: React.FC<DrawingToolbarProps> = ({ drawRef, mapRef }) => {
       drawRef.current.trash();
     }
   };
-
-  // Íconos SVG limpios y modernos
-  const CursorIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path>
-      <path d="M13 13l6 6"></path>
-    </svg>
-  );
 
   const PolygonIcon = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
