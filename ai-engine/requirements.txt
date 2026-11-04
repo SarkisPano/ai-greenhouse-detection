@@ -3,8 +3,8 @@ uvicorn==0.29.0
 celery==5.3.6
 redis==5.0.3
 supabase==2.4.5
-ultralytics==8.1.42
 requests==2.31.0
 shapely==2.0.3
+networkx==3.2.1
 inference
 Pillow
