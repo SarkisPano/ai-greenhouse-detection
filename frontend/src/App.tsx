@@ -351,12 +351,7 @@ function App() {
   };
 
   const handleLoadZone = async (zone: SavedZone) => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-    setIsScanning(false);
-    setScanProgress(null);
+    await handleCancelScan();
     setAutoSaveStatus('idle');
     setActiveZoneId(zone.id);
     const featureCollection = zone.geojson.type === 'FeatureCollection' ? zone.geojson : {
@@ -392,13 +387,8 @@ function App() {
     }
   };
 
-  const handleCancelEdit = () => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-    setIsScanning(false);
-    setScanProgress(null);
+  const handleCancelEdit = async () => {
+    await handleCancelScan();
     setAutoSaveStatus('idle');
     setActiveZoneId(null);
     setZoneAreaHa(0);
@@ -476,67 +466,80 @@ function App() {
     const scanId = data.id;
     currentScanIdRef.current = scanId;
     
-    // 3. Llamar al motor de IA en Python
-    try {
-      await fetch(`${API_BASE_URL}/webhook/scans`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'INSERT',
-          table: 'ai_scans',
-          record: { id: scanId, status: 'processing', zone_id: targetZoneId }
-        })
-      });
-      
-      // Iniciar polling para ver el progreso en tiempo real y cuándo termina
-      pollIntervalRef.current = setInterval(async () => {
-        const { data: scanCheck } = await supabase
-          .from('ai_scans')
-          .select('status, detection_count, total_area_detected, result_geojson')
-          .eq('id', scanId)
-          .single();
-
-        if (!scanCheck) return;
-
-        if (scanCheck.status === 'processing' && scanCheck.result_geojson?.progress) {
-          setScanProgress(scanCheck.result_geojson.progress);
-        } else if (scanCheck.status === 'completed') {
-          if (pollIntervalRef.current) {
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
-          }
-          currentScanIdRef.current = null;
-          const feats = ensureFeatureIds(scanCheck.result_geojson?.features || []);
-          setRawScanResult({
-            count: scanCheck.detection_count,
-            totalArea: scanCheck.total_area_detected,
-            geojson: {
-              ...scanCheck.result_geojson,
-              features: feats
-            }
+    // 3. Notificar al motor de IA (con reintentos silenciosos y fallback autónomo de base de datos)
+    const notifyAiEngine = async () => {
+      const maxRetries = 3;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/webhook/scans`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'INSERT',
+              table: 'ai_scans',
+              record: { id: scanId, status: 'processing', zone_id: targetZoneId }
+            })
           });
-          setScanProgress(null);
-          setIsScanning(false);
-        } else if (scanCheck.status === 'failed' || scanCheck.status === 'cancelled') {
-          if (pollIntervalRef.current) {
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
+          if (res.ok) {
+            console.log(`[AI Engine] Notificación despachada con éxito en intento ${attempt}`);
+            return;
           }
-          currentScanIdRef.current = null;
-          setScanProgress(null);
-          setIsScanning(false);
-          if (scanCheck.status === 'failed') {
-            alert("Ocurrió un error al procesar el escaneo de IA. Por favor intentá nuevamente.");
-          }
+        } catch (netErr) {
+          console.warn(`[AI Engine] Intento HTTP ${attempt}/${maxRetries} demorado, reintentando...`, netErr);
         }
-      }, 1500);
-    } catch (e) {
-      console.error("Error calling AI Engine:", e);
-      alert("No se pudo conectar con el motor de Inteligencia Artificial.");
-      currentScanIdRef.current = null;
-      setScanProgress(null);
-      setIsScanning(false);
-    }
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 1200));
+        }
+      }
+      // Si todos los intentos HTTP directos fallan (ej: timeout por alta carga momentánea),
+      // NO mostramos cartel de error: el Watcher de Supabase en el servidor toma el escaneo de la BD en 3 segundos.
+      console.log('[AI Engine] Notificación directa demorada; el vigilante autónomo de Supabase procesará el escaneo.');
+    };
+
+    notifyAiEngine();
+    
+    // 4. Iniciar polling para ver el progreso en tiempo real y cuándo termina
+    pollIntervalRef.current = setInterval(async () => {
+      const { data: scanCheck } = await supabase
+        .from('ai_scans')
+        .select('status, detection_count, total_area_detected, result_geojson')
+        .eq('id', scanId)
+        .single();
+
+      if (!scanCheck) return;
+
+      if (scanCheck.status === 'processing' && scanCheck.result_geojson?.progress) {
+        setScanProgress(scanCheck.result_geojson.progress);
+      } else if (scanCheck.status === 'completed') {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+        currentScanIdRef.current = null;
+        const feats = ensureFeatureIds(scanCheck.result_geojson?.features || []);
+        setRawScanResult({
+          count: scanCheck.detection_count,
+          totalArea: scanCheck.total_area_detected,
+          geojson: {
+            ...scanCheck.result_geojson,
+            features: feats
+          }
+        });
+        setScanProgress(null);
+        setIsScanning(false);
+      } else if (scanCheck.status === 'failed' || scanCheck.status === 'cancelled') {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+        currentScanIdRef.current = null;
+        setScanProgress(null);
+        setIsScanning(false);
+        if (scanCheck.status === 'failed') {
+          alert("Ocurrió un error al procesar el escaneo de IA. Por favor intentá nuevamente.");
+        }
+      }
+    }, 1500);
   };
 
   const handleExportExcel = () => {
