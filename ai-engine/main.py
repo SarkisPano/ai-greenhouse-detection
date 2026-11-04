@@ -19,13 +19,8 @@ supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 # Registro en memoria de escaneos encolados para no duplicar tareas
 enqueued_scans = set()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Nota: Los encabezados CORS los inyecta Caddy a nivel de proxy inverso.
+# No agregamos CORSMiddleware aquí para evitar duplicar el encabezado 'Access-Control-Allow-Origin: *, *'.
 
 # Servir las imágenes locales descargadas para previsualización
 if os.path.exists("dataset_images"):
@@ -108,8 +103,7 @@ def background_supabase_scan_watcher():
             pending = supabase_client.table('ai_scans') \
                 .select('id, zone_id, status, result_geojson') \
                 .eq('status', 'processing') \
-                .order('created_at', desc=True) \
-                .limit(5) \
+                .limit(10) \
                 .execute()
 
             if pending.data:
@@ -124,8 +118,7 @@ def background_supabase_scan_watcher():
                             print(f"[Watcher] Escaneo pendiente detectado en Supabase: {s_id}. Encolando a Celery...")
                             enqueue_scan_job(s_id, z_id)
         except Exception as e:
-            # Mantener el watcher siempre activo sin caerse
-            pass
+            print(f"[Watcher Exception]: {e}")
 
         time.sleep(3)
 

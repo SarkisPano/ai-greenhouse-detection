@@ -279,7 +279,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
       draw.current.add(zoneToLoad.geojson);
       try {
         const [minX, minY, maxX, maxY] = bbox(zoneToLoad.geojson);
-        map.current.fitBounds([[minX, minY], [maxX, maxY]], { padding: 80, duration: 1500 });
+        if (Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) {
+          if (Math.abs(minY) <= 90 && Math.abs(maxY) <= 90) {
+            map.current.fitBounds([[minX, minY], [maxX, maxY]], { padding: 80, duration: 1500 });
+          }
+        }
       } catch (e) {
         console.error('Error al centrar el mapa en la zona cargada:', e);
       }
