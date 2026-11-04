@@ -27,6 +27,7 @@ interface SidebarProps {
   onPlasticPercentChange: (val: number) => void;
   autoSaveStatus?: 'idle' | 'saving' | 'saved';
   onExportExcel: () => void;
+  onCancelScan?: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -35,7 +36,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   isAddingManual = false, onToggleAddManual,
   onScan, savedZones, onSaveZone, onLoadZone, canSave,
   activeZoneId, activeZoneName, onUpdateZone, onCancelEdit, onDeleteZone,
-  plasticPercent, onPlasticPercentChange, autoSaveStatus = 'idle', onExportExcel
+  plasticPercent, onPlasticPercentChange, autoSaveStatus = 'idle', onExportExcel,
+  onCancelScan
 }) => {
   const [view, setView] = useState<'main' | 'library'>('main');
   const [zoneName, setZoneName] = useState('');
@@ -256,9 +258,35 @@ const Sidebar: React.FC<SidebarProps> = ({
                   }}
                 />
               </div>
-              <span style={{ fontSize: '0.75rem', color: '#d1d5db', display: 'block' }}>
+              <span style={{ fontSize: '0.75rem', color: '#d1d5db', display: 'block', marginBottom: onCancelScan ? '0.6rem' : 0 }}>
                 {scanProgress?.text || 'Iniciando motor de detección satelital...'}
               </span>
+              {onCancelScan && (
+                <button
+                  type="button"
+                  onClick={onCancelScan}
+                  style={{
+                    width: '100%',
+                    padding: '0.45rem 0.6rem',
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#fca5a5',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.22)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)')}
+                >
+                  ✕ Cancelar Escaneo
+                </button>
+              )}
             </div>
           )}
 

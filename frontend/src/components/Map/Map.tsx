@@ -23,6 +23,9 @@ interface MapComponentProps {
   isAddingManual?: boolean;
   onManualDetectionAdded?: (feature: any) => void;
   onCancelAddManual?: () => void;
+  isScanning?: boolean;
+  scanProgress?: { percent: number; text: string } | null;
+  onCancelScan?: () => void;
 }
 
 interface SearchSuggestion {
@@ -40,7 +43,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
   onDeleteDetection,
   isAddingManual = false,
   onManualDetectionAdded,
-  onCancelAddManual
+  onCancelAddManual,
+  isScanning = false,
+  scanProgress,
+  onCancelScan
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -1063,6 +1069,93 @@ const MapComponent: React.FC<MapComponentProps> = ({
       </div>
 
       <div ref={mapContainer} className={styles.mapContainer} />
+      
+      {isScanning && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(10, 15, 29, 0.65)',
+          backdropFilter: 'blur(3px)',
+          WebkitBackdropFilter: 'blur(3px)',
+          zIndex: 40,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'all'
+        }}>
+          <div style={{
+            backgroundColor: '#111827',
+            border: '1px solid #374151',
+            borderRadius: '14px',
+            padding: '1.75rem 2.25rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
+            maxWidth: '430px',
+            width: '88%',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1rem',
+            animation: 'fadeIn 0.25s ease'
+          }}>
+            <div style={{
+              width: '46px',
+              height: '46px',
+              border: '3px solid rgba(16, 185, 129, 0.2)',
+              borderTopColor: '#10b981',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <div>
+              <h3 style={{ margin: 0, color: '#f9fafb', fontSize: '1.15rem', fontWeight: 600 }}>
+                Escaneo IA en Curso ({scanProgress?.percent ?? 5}%)
+              </h3>
+              <p style={{ margin: '0.45rem 0 0', color: '#9ca3af', fontSize: '0.85rem' }}>
+                {scanProgress?.text || 'Analizando imágenes satelitales en alta resolución...'}
+              </p>
+            </div>
+            <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '999px', overflow: 'hidden' }}>
+              <div style={{
+                width: `${Math.max(5, Math.min(100, scanProgress?.percent ?? 5))}%`,
+                height: '100%',
+                backgroundColor: '#10b981',
+                borderRadius: '999px',
+                transition: 'width 0.4s ease'
+              }} />
+            </div>
+            {onCancelScan && (
+              <button
+                type="button"
+                onClick={onCancelScan}
+                style={{
+                  marginTop: '0.4rem',
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  color: '#fca5a5',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)')}
+              >
+                ✕ Cancelar Escaneo
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <DrawingToolbar drawRef={draw} mapRef={map} />
       {(!import.meta.env.VITE_MAPBOX_TOKEN || import.meta.env.VITE_MAPBOX_TOKEN.includes('tu_token_aqui')) && (
         <div className={styles.tokenWarning}>

@@ -358,6 +358,15 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
         except Exception:
             pass
 
+    def is_scan_cancelled() -> bool:
+        try:
+            check = supabase.table('ai_scans').select('status').eq('id', scan_id).execute()
+            if check.data and check.data[0].get('status') == 'cancelled':
+                return True
+        except Exception:
+            pass
+        return False
+
     def mark_scan_failed(reason: str):
         print(f"[{scan_id}] Escaneo fallido: {reason}")
         try:
@@ -423,6 +432,10 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
     step_update = max(1, total_tiles // 6)
 
     for idx_tile, (i, c_lon, c_lat, img) in enumerate(tiles_data):
+        if is_scan_cancelled():
+            print(f"[{scan_id}] Escaneo cancelado por el usuario. Liberando CPU...")
+            return {'status': 'cancelled'}
+
         if img is None:
             continue
         print(f"[{scan_id}] Analizando cuadrícula {i+1}/{len(centers)}")

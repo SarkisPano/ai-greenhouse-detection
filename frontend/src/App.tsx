@@ -84,6 +84,28 @@ function App() {
   // Estado de la Librería de Proyectos (Supabase)
   const [savedZones, setSavedZones] = useState<SavedZone[]>([]);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentScanIdRef = useRef<string | null>(null);
+
+  const handleCancelScan = useCallback(async () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    const scanId = currentScanIdRef.current;
+    if (scanId) {
+      try {
+        await supabase
+          .from('ai_scans')
+          .update({ status: 'cancelled' })
+          .eq('id', scanId);
+      } catch (err) {
+        console.error('Error cancelling scan:', err);
+      }
+      currentScanIdRef.current = null;
+    }
+    setIsScanning(false);
+    setScanProgress(null);
+  }, []);
 
   const fetchZones = useCallback(async () => {
     const { data, error } = await supabase
@@ -452,6 +474,7 @@ function App() {
     }
 
     const scanId = data.id;
+    currentScanIdRef.current = scanId;
     
     // 3. Llamar al motor de IA en Python
     try {
@@ -482,6 +505,7 @@ function App() {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
           }
+          currentScanIdRef.current = null;
           const feats = ensureFeatureIds(scanCheck.result_geojson?.features || []);
           setRawScanResult({
             count: scanCheck.detection_count,
@@ -493,19 +517,23 @@ function App() {
           });
           setScanProgress(null);
           setIsScanning(false);
-        } else if (scanCheck.status === 'failed') {
+        } else if (scanCheck.status === 'failed' || scanCheck.status === 'cancelled') {
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
           }
+          currentScanIdRef.current = null;
           setScanProgress(null);
           setIsScanning(false);
-          alert("Ocurrió un error al procesar el escaneo de IA. Por favor intentá nuevamente.");
+          if (scanCheck.status === 'failed') {
+            alert("Ocurrió un error al procesar el escaneo de IA. Por favor intentá nuevamente.");
+          }
         }
       }, 1500);
     } catch (e) {
       console.error("Error calling AI Engine:", e);
       alert("No se pudo conectar con el motor de Inteligencia Artificial.");
+      currentScanIdRef.current = null;
       setScanProgress(null);
       setIsScanning(false);
     }
@@ -618,6 +646,7 @@ function App() {
         onPlasticPercentChange={handlePlasticPercentChange}
         autoSaveStatus={autoSaveStatus}
         onExportExcel={handleExportExcel}
+        onCancelScan={handleCancelScan}
       />
 
       <MapComponent 
@@ -629,6 +658,9 @@ function App() {
         isAddingManual={isAddingManual}
         onManualDetectionAdded={handleManualDetectionAdded}
         onCancelAddManual={() => setIsAddingManual(false)}
+        isScanning={isScanning}
+        scanProgress={scanProgress}
+        onCancelScan={handleCancelScan}
       />
     </div>
   );
