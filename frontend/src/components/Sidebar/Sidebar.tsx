@@ -123,9 +123,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </div>
               {isMobile && (
-                <button className={styles.mobileCloseBtn} onClick={onToggle} title="Volver al mapa">
-                  <span>✕</span>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Cerrar</span>
+                <button className={styles.mobileCloseBtn} onClick={onToggle} title="Cerrar panel" aria-label="Cerrar panel">
+                  ✕
                 </button>
               )}
             </div>
@@ -186,9 +185,8 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
             {isMobile && (
-              <button className={styles.mobileCloseBtn} onClick={onToggle} title="Volver al mapa">
-                <span>✕</span>
-                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Cerrar</span>
+              <button className={styles.mobileCloseBtn} onClick={onToggle} title="Cerrar panel" aria-label="Cerrar panel">
+                ✕
               </button>
             )}
           </div>
