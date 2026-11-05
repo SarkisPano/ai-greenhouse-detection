@@ -117,8 +117,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
               <h2>Mis Zonas</h2>
               {isMobile && (
-                <button className={styles.mobileCloseBtn} onClick={onToggle} title="Cerrar">
-                  ✕
+                <button className={styles.mobileCloseBtn} onClick={onToggle} title="Volver al mapa">
+                  <span>✕</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Cerrar</span>
                 </button>
               )}
             </div>
@@ -177,8 +178,9 @@ const Sidebar: React.FC<SidebarProps> = ({
               <p>de Invernaderos</p>
             </div>
             {isMobile && (
-              <button className={styles.mobileCloseBtn} onClick={onToggle} title="Cerrar">
-                ✕
+              <button className={styles.mobileCloseBtn} onClick={onToggle} title="Volver al mapa">
+                <span>✕</span>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Cerrar</span>
               </button>
             )}
           </div>
@@ -434,6 +436,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button className={styles.primaryButton} disabled={!scanResult} onClick={onExportExcel}>
             Generar Reporte Excel
           </button>
+          {isMobile && (
+            <button 
+              type="button" 
+              className={styles.secondaryButton} 
+              onClick={onToggle}
+              style={{ width: '100%', marginTop: '0.65rem', padding: '0.75rem', color: '#9ca3af', borderColor: '#4b5563', fontSize: '0.88rem', fontWeight: 600 }}
+            >
+              ← Volver al Mapa Satelital
+            </button>
+          )}
         </div>
       </div>
 

@@ -66,6 +66,16 @@ function App() {
     }
     return true;
   });
+
+  // Si la pantalla pasa a mobile (ej: al achicar la ventana o activar DevTools),
+  // cerramos el panel lateral para que el mapa satelital quede visible al instante.
+  const prevIsMobileRef = useRef(isMobile);
+  useEffect(() => {
+    if (isMobile && !prevIsMobileRef.current) {
+      setIsSidebarOpen(false);
+    }
+    prevIsMobileRef.current = isMobile;
+  }, [isMobile]);
   
   // Estado de la Zona actual
   const [zoneAreaHa, setZoneAreaHa] = useState<number>(0);
