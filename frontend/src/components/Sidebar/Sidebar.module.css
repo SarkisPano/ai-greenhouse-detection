@@ -68,17 +68,64 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.headerTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.75rem;
+}
+
+.brandBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.brandLogo {
+  width: 68px;
+  height: 68px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: block;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.brandTitle {
+  color: var(--color-primary);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.brandSubtitle {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+  line-height: 1.2;
+}
+
 .header h2 {
   color: var(--color-primary);
   margin-bottom: 0.2rem;
-  font-size: 1.3rem;
-  font-weight: 800;
-  letter-spacing: -0.5px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
 }
 
 .header p {
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .secondaryButton {

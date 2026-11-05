@@ -114,8 +114,14 @@ const Sidebar: React.FC<SidebarProps> = ({
           style={isMobile ? undefined : { width: `${sidebarWidth}px`, marginLeft: isOpen ? '0px' : `-${sidebarWidth}px` }}
         >
           <div className={styles.header}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-              <h2>Mis Zonas</h2>
+            <div className={styles.headerTop}>
+              <div className={styles.brandBlock}>
+                <img src="/logo.png" alt="Logo" className={styles.brandLogo} />
+                <div className={styles.brandText}>
+                  <h2 className={styles.brandTitle}>Mis Zonas</h2>
+                  <p className={styles.brandSubtitle}>Librería de prospecciones guardadas</p>
+                </div>
+              </div>
               {isMobile && (
                 <button className={styles.mobileCloseBtn} onClick={onToggle} title="Volver al mapa">
                   <span>✕</span>
@@ -123,8 +129,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               )}
             </div>
-            <p style={{marginBottom: '0.8rem'}}>Librería de prospecciones guardadas</p>
-            <button className={styles.secondaryButton} onClick={() => setView('main')} style={{width: '100%'}}>Volver al mapa</button>
+            <button className={styles.secondaryButton} onClick={() => setView('main')} style={{marginTop: '0.8rem', width: '100%'}}>Volver al mapa</button>
           </div>
 
           <div className={styles.content}>
@@ -172,10 +177,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         {!isMobile && <div className={styles.resizer} onMouseDown={startResizing} />}
 
         <div className={styles.header}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%' }}>
-            <div>
-              <h2>Detección Inteligente</h2>
-              <p>de Invernaderos</p>
+          <div className={styles.headerTop}>
+            <div className={styles.brandBlock}>
+              <img src="/logo.png" alt="Logo" className={styles.brandLogo} />
+              <div className={styles.brandText}>
+                <h2 className={styles.brandTitle}>Detección Inteligente</h2>
+                <p className={styles.brandSubtitle}>de Invernaderos</p>
+              </div>
             </div>
             {isMobile && (
               <button className={styles.mobileCloseBtn} onClick={onToggle} title="Volver al mapa">
