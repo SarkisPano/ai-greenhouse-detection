@@ -26,6 +26,9 @@ interface MapComponentProps {
   isScanning?: boolean;
   scanProgress?: { percent: number; text: string } | null;
   onCancelScan?: () => void;
+  isMobile?: boolean;
+  onToggleSidebar?: () => void;
+  isSidebarOpen?: boolean;
 }
 
 interface SearchSuggestion {
@@ -46,7 +49,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
   onCancelAddManual,
   isScanning = false,
   scanProgress,
-  onCancelScan
+  onCancelScan,
+  isMobile = false,
+  onToggleSidebar
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -917,23 +922,54 @@ const MapComponent: React.FC<MapComponentProps> = ({
       <div style={{
         position: 'absolute',
         top: '12px',
-        left: '34px',
+        left: isMobile ? '10px' : '34px',
+        right: isMobile ? '56px' : 'auto',
         zIndex: 5,
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
-        flexWrap: 'wrap'
+        gap: '6px',
+        flexWrap: isMobile ? 'nowrap' : 'wrap',
+        maxWidth: isMobile ? 'calc(100vw - 68px)' : 'none'
       }}>
-        <div style={{ position: 'relative' }}>
+        {isMobile && onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            style={{
+              background: 'rgba(17, 24, 39, 0.94)',
+              color: '#10b981',
+              border: '1px solid #374151',
+              borderRadius: '8px',
+              height: '34px',
+              padding: '0 9px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+              backdropFilter: 'blur(6px)',
+              flexShrink: 0
+            }}
+            title="Abrir Menú / Panel"
+          >
+            <span style={{ fontSize: '14px' }}>☰</span>
+            <span>Panel</span>
+          </button>
+        )}
+
+        <div style={{ position: 'relative', flex: isMobile ? 1 : 'none', minWidth: 0 }}>
           <form onSubmit={handleSearchLocation} style={{
             display: 'flex',
             alignItems: 'center',
             background: 'rgba(17, 24, 39, 0.92)',
             border: '1px solid #374151',
             borderRadius: '8px',
-            padding: '2px 6px 2px 10px',
+            padding: '2px 5px 2px 8px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
-            backdropFilter: 'blur(6px)'
+            backdropFilter: 'blur(6px)',
+            width: isMobile ? '100%' : 'auto'
           }}>
             <input
               type="text"
@@ -942,15 +978,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 setSearchQuery(e.target.value);
                 if (!e.target.value.trim()) setSearchResults([]);
               }}
-              placeholder="Buscar en Armenia o lat, lon..."
+              placeholder={isMobile ? "Buscar..." : "Buscar en Armenia o lat, lon..."}
               style={{
                 background: 'transparent',
                 border: 'none',
                 color: '#f9fafb',
-                fontSize: '12.5px',
-                width: '210px',
+                fontSize: '12px',
+                width: isMobile ? '100%' : '210px',
+                minWidth: '50px',
                 outline: 'none',
-                padding: '5px 0'
+                padding: '4px 0'
               }}
             />
             {searchQuery && (
@@ -962,8 +999,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
                   border: 'none',
                   color: '#9ca3af',
                   cursor: 'pointer',
-                  fontSize: '12px',
-                  padding: '0 4px'
+                  fontSize: '11px',
+                  padding: '0 3px'
                 }}
                 title="Limpiar búsqueda"
               >
@@ -977,10 +1014,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 border: 'none',
                 color: '#ffffff',
                 borderRadius: '6px',
-                padding: '4px 8px',
-                fontSize: '12px',
+                padding: '4px 7px',
+                fontSize: '11.5px',
                 fontWeight: 600,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                flexShrink: 0
               }}
               title="Buscar ubicación"
             >
@@ -994,7 +1032,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
               top: '100%',
               left: 0,
               marginTop: '4px',
-              width: '280px',
+              width: isMobile ? '260px' : '280px',
+              maxWidth: '90vw',
               background: '#111827',
               border: '1px solid #374151',
               borderRadius: '8px',
@@ -1034,19 +1073,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
             borderRadius: '8px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
             border: '1px solid #374151',
-            padding: '6px 11px',
+            padding: isMobile ? '6px 8px' : '6px 11px',
             cursor: 'pointer',
-            fontSize: '12.5px',
+            fontSize: '12px',
             fontWeight: 600,
             display: 'flex',
             alignItems: 'center',
-            gap: '5px'
+            gap: '4px',
+            flexShrink: 0
           }}
           onClick={() => setShowDetections(!showDetections)}
           title={showDetections ? "Ocultar polígonos detectados" : "Mostrar polígonos detectados"}
         >
           <span>{showDetections ? '👁️' : '🚫'}</span>
-          <span>Detecciones</span>
+          {!isMobile && <span>Detecciones</span>}
         </button>
 
         <button 
@@ -1056,19 +1096,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
             borderRadius: '8px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
             border: `1px solid ${showStreets ? '#10b981' : '#374151'}`,
-            padding: '6px 11px',
+            padding: isMobile ? '6px 8px' : '6px 11px',
             cursor: 'pointer',
-            fontSize: '12.5px',
+            fontSize: '12px',
             fontWeight: 600,
             display: 'flex',
             alignItems: 'center',
-            gap: '5px'
+            gap: '4px',
+            flexShrink: 0
           }}
           onClick={() => setShowStreets(!showStreets)}
           title={showStreets ? "Ocultar nombres de calles y ciudades" : "Mostrar nombres de calles y ciudades"}
         >
           <span>🗺️</span>
-          <span>Calles y Nombres</span>
+          {!isMobile && <span>Calles y Nombres</span>}
         </button>
       </div>
 

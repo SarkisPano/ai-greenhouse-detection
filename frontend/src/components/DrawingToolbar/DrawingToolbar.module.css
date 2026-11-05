@@ -110,3 +110,20 @@
 .flyoutItem.activeFlyout {
   color: #2962FF;
 }
+
+@media (max-width: 768px) {
+  .toolbarWrapper {
+    left: 8px;
+    top: 48%;
+  }
+
+  .toolButton {
+    width: 42px;
+    height: 42px;
+  }
+
+  .flyoutItem {
+    padding: 10px 18px;
+    font-size: 14px;
+  }
+}

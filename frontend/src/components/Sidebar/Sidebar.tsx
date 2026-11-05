@@ -28,6 +28,7 @@ interface SidebarProps {
   autoSaveStatus?: 'idle' | 'saving' | 'saved';
   onExportExcel: () => void;
   onCancelScan?: () => void;
+  isMobile?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -37,7 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onScan, savedZones, onSaveZone, onLoadZone, canSave,
   activeZoneId, activeZoneName, onUpdateZone, onCancelEdit, onDeleteZone,
   plasticPercent, onPlasticPercentChange, autoSaveStatus = 'idle', onExportExcel,
-  onCancelScan
+  onCancelScan, isMobile = false
 }) => {
   const [view, setView] = useState<'main' | 'library'>('main');
   const [zoneName, setZoneName] = useState('');
@@ -104,17 +105,28 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   if (view === 'library') {
     return (
-      <div 
-        className={`${styles.sidebarContainer} ${isOpen ? styles.open : styles.closed}`}
-        style={{ width: `${sidebarWidth}px`, marginLeft: isOpen ? '0px' : `-${sidebarWidth}px` }}
-      >
-        <div className={styles.header}>
-          <h2>Mis Zonas</h2>
-          <p style={{marginBottom: '0.8rem'}}>Librería de prospecciones guardadas</p>
-          <button className={styles.secondaryButton} onClick={() => setView('main')} style={{width: '100%'}}>Volver al mapa</button>
-        </div>
+      <>
+        {isMobile && isOpen && (
+          <div className={styles.mobileBackdrop} onClick={onToggle} />
+        )}
+        <div 
+          className={`${styles.sidebarContainer} ${isOpen ? styles.open : styles.closed}`}
+          style={isMobile ? undefined : { width: `${sidebarWidth}px`, marginLeft: isOpen ? '0px' : `-${sidebarWidth}px` }}
+        >
+          <div className={styles.header}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+              <h2>Mis Zonas</h2>
+              {isMobile && (
+                <button className={styles.mobileCloseBtn} onClick={onToggle} title="Cerrar">
+                  ✕
+                </button>
+              )}
+            </div>
+            <p style={{marginBottom: '0.8rem'}}>Librería de prospecciones guardadas</p>
+            <button className={styles.secondaryButton} onClick={() => setView('main')} style={{width: '100%'}}>Volver al mapa</button>
+          </div>
 
-        <div className={styles.content}>
+          <div className={styles.content}>
           {savedZones.length === 0 ? (
             <p className={styles.emptyState}>No tienes zonas guardadas aún.</p>
           ) : (
@@ -142,24 +154,33 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       </div>
+      </>
     );
   }
 
   // VISTA PRINCIPAL (Dashboard y Escaneo)
   return (
     <>
+      {isMobile && isOpen && (
+        <div className={styles.mobileBackdrop} onClick={onToggle} />
+      )}
       <div 
         className={`${styles.sidebarContainer} ${isOpen ? styles.open : styles.closed}`}
-        style={{ width: `${sidebarWidth}px`, marginLeft: isOpen ? '0px' : `-${sidebarWidth}px` }}
+        style={isMobile ? undefined : { width: `${sidebarWidth}px`, marginLeft: isOpen ? '0px' : `-${sidebarWidth}px` }}
       >
-        <div className={styles.resizer} onMouseDown={startResizing} />
+        {!isMobile && <div className={styles.resizer} onMouseDown={startResizing} />}
 
         <div className={styles.header}>
-          <div className="flex items-start justify-between w-full">
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%' }}>
             <div>
               <h2>Detección Inteligente</h2>
               <p>de Invernaderos</p>
             </div>
+            {isMobile && (
+              <button className={styles.mobileCloseBtn} onClick={onToggle} title="Cerrar">
+                ✕
+              </button>
+            )}
           </div>
           <button 
             className={styles.secondaryButton} 
@@ -416,14 +437,16 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <button 
-        className={`${styles.toggleButton} ${isOpen ? styles.open : styles.closed}`} 
-        onClick={onToggle}
-        title={isOpen ? "Ocultar Panel" : "Mostrar Panel"}
-        style={{ left: isOpen ? `${sidebarWidth}px` : '0px' }}
-      >
-        {isOpen ? "◀" : "▶"}
-      </button>
+      {!isMobile && (
+        <button 
+          className={`${styles.toggleButton} ${isOpen ? styles.open : styles.closed}`} 
+          onClick={onToggle}
+          title={isOpen ? "Ocultar Panel" : "Mostrar Panel"}
+          style={{ left: isOpen ? `${sidebarWidth}px` : '0px' }}
+        >
+          {isOpen ? "◀" : "▶"}
+        </button>
+      )}
     </>
   );
 };

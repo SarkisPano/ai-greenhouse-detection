@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { supabase, API_BASE_URL } from './supabaseClient';
 import MapComponent from './components/Map/Map';
 import Sidebar from './components/Sidebar/Sidebar';
+import { useIsMobile } from './useIsMobile';
 
 export interface ScanResult {
   count: number;
@@ -58,7 +59,13 @@ const getPolygonCentroidLatLon = (geometry: any): { lat: number; lon: number } |
 };
 
 function App() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return true;
+  });
   
   // Estado de la Zona actual
   const [zoneAreaHa, setZoneAreaHa] = useState<number>(0);
@@ -622,11 +629,12 @@ function App() {
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden' }}>
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden', position: 'relative' }}>
       
       <Sidebar 
         isOpen={isSidebarOpen} 
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        isMobile={isMobile}
         zoneAreaHa={zoneAreaHa}
         isScanning={isScanning}
         scanProgress={scanProgress}
@@ -664,7 +672,156 @@ function App() {
         isScanning={isScanning}
         scanProgress={scanProgress}
         onCancelScan={handleCancelScan}
+        isMobile={isMobile}
+        onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
+        isSidebarOpen={isSidebarOpen}
       />
+
+      {/* Barra de Acciones Rápida para Dispositivos Móviles */}
+      {isMobile && !isSidebarOpen && !isScanning && (
+        <div style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: '10px 14px',
+          paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
+          background: 'linear-gradient(to top, rgba(15, 17, 21, 0.98), rgba(15, 17, 21, 0.88) 80%, rgba(15, 17, 21, 0))',
+          pointerEvents: 'none',
+          zIndex: 30,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          {scanResult ? (
+            <div style={{
+              pointerEvents: 'auto',
+              width: '100%',
+              maxWidth: '420px',
+              backgroundColor: '#1a1d24',
+              border: '1px solid #374151',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px'
+            }}>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#10b981' }}>
+                  🌿 {scanResult.count} invernaderos
+                </div>
+                <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                  {scanResult.totalArea.toLocaleString()} m² huella
+                  {plasticPercent > 0 && ` (+${plasticPercent}% lona)`}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                style={{
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                  flexShrink: 0
+                }}
+              >
+                <span>Detalles</span>
+                <span>❯</span>
+              </button>
+            </div>
+          ) : zoneAreaHa > 0 ? (
+            <div style={{
+              pointerEvents: 'auto',
+              width: '100%',
+              maxWidth: '420px',
+              backgroundColor: '#1a1d24',
+              border: '1px solid #10b981',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              boxShadow: '0 10px 25px rgba(16, 185, 129, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px'
+            }}>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#9ca3af', fontWeight: 600 }}>
+                  Área a escanear
+                </div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>
+                  {zoneAreaHa.toLocaleString(undefined, { maximumFractionDigits: 2 })} ha
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleScanZone(activeZoneId ? savedZones.find(z => z.id === activeZoneId)?.name : undefined)}
+                style={{
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '9px 14px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.45)',
+                  flexShrink: 0
+                }}
+              >
+                <span>⚡ Escanear IA</span>
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              pointerEvents: 'auto',
+              backgroundColor: 'rgba(26, 29, 36, 0.95)',
+              border: '1px solid #374151',
+              borderRadius: '999px',
+              padding: '7px 14px',
+              boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(6px)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span style={{ fontSize: '11.5px', color: '#d1d5db' }}>
+                ✏️ Dibuja una zona para escanear
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  color: '#10b981',
+                  borderRadius: '999px',
+                  padding: '3px 9px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Mis Zonas ({savedZones.length})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
