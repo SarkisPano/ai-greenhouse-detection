@@ -413,6 +413,9 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
     bbox = [min(lons), min(lats), max(lons), max(lats)]
 
     centers = get_grid_centers(bbox, ZOOM, WIDTH, HEIGHT, zone_poly_merc=zone_poly_merc)
+    if len(centers) > 40:
+        return mark_scan_failed(f"Zona demasiado extensa ({len(centers)} teselas satelitales). El límite por escaneo es de 40 cuadrículas (~120 ha). Por favor seleccioná un lote más acotado.")
+
     total_tiles = max(1, len(centers))
     print(f"[{scan_id}] Descargando en paralelo {len(centers)} recortes de Mapbox...")
     update_scan_progress(10, f"Descargando {len(centers)} cuadrículas satelitales HD...")

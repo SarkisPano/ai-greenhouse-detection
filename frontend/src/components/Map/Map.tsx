@@ -75,14 +75,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const setZoneFromCoordinates = useCallback((coordinates: number[][]) => {
     if (!draw.current) return;
     try {
-      // Eliminar polígonos viejos en draw para mantener siempre una sola zona activa limpia
-      const all = draw.current.getAll();
-      all.features.forEach((f: any) => {
-        if (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') {
-          draw.current?.delete(f.id);
-        }
-      });
-
       const newFeature = {
         type: 'Feature' as const,
         id: `zone_${Date.now()}`,
@@ -93,17 +85,31 @@ const MapComponent: React.FC<MapComponentProps> = ({
         properties: {}
       };
 
-      const addedIds = draw.current.add(newFeature);
-      if (addedIds && addedIds.length > 0) {
-        draw.current.changeMode('simple_select', { featureIds: [addedIds[0]] });
-      }
-
       const polyCollection = {
         type: 'FeatureCollection' as const,
         features: [newFeature]
       };
       const areaSquareMeters = area(polyCollection as any);
       const areaHectares = areaSquareMeters / 10000;
+
+      if (areaHectares > 120) {
+        alert(`⚠️ El área marcada es de ${Math.round(areaHectares)} hectáreas.\n\nPara garantizar máxima precisión en alta definición y procesar en segundos, el límite máximo por escaneo es de 120 ha.\n\nPor favor acercate con zoom sobre la finca para delimitar el lote.`);
+        return;
+      }
+
+      // Eliminar polígonos viejos en draw para mantener siempre una sola zona activa limpia
+      const all = draw.current.getAll();
+      all.features.forEach((f: any) => {
+        if (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') {
+          draw.current?.delete(f.id);
+        }
+      });
+
+      const addedIds = draw.current.add(newFeature);
+      if (addedIds && addedIds.length > 0) {
+        draw.current.changeMode('simple_select', { featureIds: [addedIds[0]] });
+      }
+
       onZoneUpdateRef.current(areaHectares, polyCollection);
     } catch (err) {
       console.error('Error al fijar coordenadas de zona:', err);
@@ -196,8 +202,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/satellite-streets-v12',
-      center: [44.5136, 40.1811], // Ereván, Armenia
-      zoom: 12,
+      center: [44.2867, 40.0958], // Aknashen / Gai, Armenia (zona de invernaderos)
+      zoom: 16.5,
     });
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');

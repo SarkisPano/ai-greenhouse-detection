@@ -431,6 +431,11 @@ function App() {
     const geom = extractZonePolygonGeometry(currentGeoJSON);
     if (zoneAreaHa === 0 || !geom) return;
     
+    if (zoneAreaHa > 120) {
+      alert(`⚠️ La zona seleccionada tiene ${Math.round(zoneAreaHa)} hectáreas.\n\nPara garantizar máxima precisión en alta definición y procesar en pocos segundos, el límite máximo por escaneo es de 120 hectáreas.\n\nPor favor delimitá un lote más acotado sobre la finca.`);
+      return;
+    }
+
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
