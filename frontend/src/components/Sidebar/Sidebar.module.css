@@ -69,34 +69,46 @@
 }
 
 .headerTop {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  gap: 0.75rem;
 }
 
 .brandBlock {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.55rem;
+  align-items: center;
+  text-align: center;
+  gap: 0.6rem;
+  width: 100%;
 }
 
 .brandLogo {
-  width: 68px;
-  height: 68px;
-  border-radius: 12px;
-  object-fit: cover;
-  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  height: 56px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
   display: block;
+  margin: 0 auto;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.brandLogo:hover {
+  transform: scale(1.04);
+  filter: drop-shadow(0 4px 12px rgba(255, 255, 255, 0.15));
 }
 
 .brandText {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  align-items: center;
+  text-align: center;
+  gap: 0.2rem;
+  width: 100%;
 }
 
 .brandTitle {
@@ -106,6 +118,7 @@
   letter-spacing: -0.3px;
   margin: 0;
   line-height: 1.25;
+  text-align: center;
 }
 
 .brandSubtitle {
@@ -113,6 +126,7 @@
   font-size: 0.8rem;
   margin: 0;
   line-height: 1.2;
+  text-align: center;
 }
 
 .header h2 {
@@ -392,6 +406,9 @@
 }
 
 .mobileCloseBtn {
+  position: absolute;
+  top: 0;
+  right: 0;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--color-border);
   color: var(--color-text-main);
@@ -406,6 +423,7 @@
   font-weight: bold;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  z-index: 10;
 }
 
 .mobileCloseBtn:hover, .mobileCloseBtn:active {
