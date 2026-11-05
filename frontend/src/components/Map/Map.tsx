@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { area } from '@turf/area';
@@ -29,6 +29,9 @@ interface MapComponentProps {
   isMobile?: boolean;
   onToggleSidebar?: () => void;
   isSidebarOpen?: boolean;
+  isSwipeDrawing?: boolean;
+  onCancelSwipeDraw?: () => void;
+  frameViewTrigger?: number;
 }
 
 interface SearchSuggestion {
@@ -51,12 +54,111 @@ const MapComponent: React.FC<MapComponentProps> = ({
   scanProgress,
   onCancelScan,
   isMobile = false,
-  onToggleSidebar
+  onToggleSidebar,
+  isSwipeDrawing = false,
+  onCancelSwipeDraw,
+  frameViewTrigger = 0
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const draw = useRef<MapboxDraw | null>(null);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
+
+  const onZoneUpdateRef = useRef(onZoneUpdate);
+  onZoneUpdateRef.current = onZoneUpdate;
+
+  // Estados para dibujo por deslizamiento con el dedo (Touch Swipe en Mobile)
+  const [touchBox, setTouchBox] = useState<{ startX: number; startY: number; currX: number; currY: number } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Función para establecer polígono rectangular y actualizar la zona
+  const setZoneFromCoordinates = useCallback((coordinates: number[][]) => {
+    if (!draw.current) return;
+    try {
+      // Eliminar polígonos viejos en draw para mantener siempre una sola zona activa limpia
+      const all = draw.current.getAll();
+      all.features.forEach((f: any) => {
+        if (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') {
+          draw.current?.delete(f.id);
+        }
+      });
+
+      const newFeature = {
+        type: 'Feature' as const,
+        id: `zone_${Date.now()}`,
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [coordinates]
+        },
+        properties: {}
+      };
+
+      const addedIds = draw.current.add(newFeature);
+      if (addedIds && addedIds.length > 0) {
+        draw.current.changeMode('simple_select', { featureIds: [addedIds[0]] });
+      }
+
+      const polyCollection = {
+        type: 'FeatureCollection' as const,
+        features: [newFeature]
+      };
+      const areaSquareMeters = area(polyCollection as any);
+      const areaHectares = areaSquareMeters / 10000;
+      onZoneUpdateRef.current(areaHectares, polyCollection);
+    } catch (err) {
+      console.error('Error al fijar coordenadas de zona:', err);
+    }
+  }, []);
+
+  // Desactivar temporalmente el paneo y zoom del mapa mientras se desliza el dedo
+  useEffect(() => {
+    if (!map.current) return;
+    if (isSwipeDrawing) {
+      map.current.dragPan.disable();
+      map.current.touchZoomRotate.disable();
+      map.current.scrollZoom.disable();
+    } else {
+      map.current.dragPan.enable();
+      map.current.touchZoomRotate.enable();
+      map.current.scrollZoom.enable();
+    }
+  }, [isSwipeDrawing]);
+
+  // Encuadrar automáticamente el área visible en pantalla (1-tap)
+  useEffect(() => {
+    if (!frameViewTrigger || !map.current || !draw.current) return;
+    try {
+      const bounds = map.current.getBounds();
+      if (!bounds) return;
+      const west = bounds.getWest();
+      const south = bounds.getSouth();
+      const east = bounds.getEast();
+      const north = bounds.getNorth();
+
+      // Inset del 15% para que quede centrado cómodamente dentro de la pantalla
+      const lngSpan = east - west;
+      const latSpan = north - south;
+      const insetX = lngSpan * 0.15;
+      const insetY = latSpan * 0.15;
+
+      const minLng = west + insetX;
+      const maxLng = east - insetX;
+      const minLat = south + insetY;
+      const maxLat = north - insetY;
+
+      const coordinates = [
+        [minLng, maxLat],
+        [maxLng, maxLat],
+        [maxLng, minLat],
+        [minLng, minLat],
+        [minLng, maxLat]
+      ];
+
+      setZoneFromCoordinates(coordinates);
+    } catch (err) {
+      console.error('Error al encuadrar vista:', err);
+    }
+  }, [frameViewTrigger, setZoneFromCoordinates]);
 
   const onDeleteDetectionRef = useRef(onDeleteDetection);
   onDeleteDetectionRef.current = onDeleteDetection;
@@ -1114,6 +1216,160 @@ const MapComponent: React.FC<MapComponentProps> = ({
       </div>
 
       <div ref={mapContainer} className={styles.mapContainer} />
+
+      {/* Banner superior interactivo en modo Touch Swipe */}
+      {isSwipeDrawing && (
+        <div style={{
+          position: 'absolute',
+          top: isMobile ? '56px' : '64px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          backgroundColor: '#111827',
+          border: '1.5px solid #10b981',
+          borderRadius: '999px',
+          padding: '6px 14px',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          whiteSpace: 'nowrap'
+        }}>
+          <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 700 }}>
+            👆 Apoyá el dedo y arrastrá en diagonal
+          </span>
+          {onCancelSwipeDraw && (
+            <button
+              type="button"
+              onClick={onCancelSwipeDraw}
+              style={{
+                background: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid #ef4444',
+                color: '#fca5a5',
+                borderRadius: '50%',
+                width: '20px',
+                height: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '11px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+              title="Cancelar"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Capa de captura táctil interactiva para arrastrar y generar el rectángulo */}
+      {isSwipeDrawing && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 35,
+            cursor: 'crosshair',
+            touchAction: 'none',
+            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+          }}
+          onPointerDown={(e) => {
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            touchStartRef.current = { x, y };
+            setTouchBox({ startX: x, startY: y, currX: x, currY: y });
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (!touchStartRef.current) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+            const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+            setTouchBox({
+              startX: touchStartRef.current.x,
+              startY: touchStartRef.current.y,
+              currX: x,
+              currY: y
+            });
+          }}
+          onPointerUp={(e) => {
+            if (!touchStartRef.current || !map.current) return;
+            const start = touchStartRef.current;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const curr = {
+              x: Math.max(0, Math.min(rect.width, e.clientX - rect.left)),
+              y: Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+            };
+            
+            const width = Math.abs(curr.x - start.x);
+            const height = Math.abs(curr.y - start.y);
+            
+            if (width >= 20 && height >= 20) {
+              const minX = Math.min(start.x, curr.x);
+              const maxX = Math.max(start.x, curr.x);
+              const minY = Math.min(start.y, curr.y);
+              const maxY = Math.max(start.y, curr.y);
+
+              const nw = map.current.unproject([minX, minY]);
+              const ne = map.current.unproject([maxX, minY]);
+              const se = map.current.unproject([maxX, maxY]);
+              const sw = map.current.unproject([minX, maxY]);
+
+              const coordinates = [
+                [nw.lng, nw.lat],
+                [ne.lng, ne.lat],
+                [se.lng, se.lat],
+                [sw.lng, sw.lat],
+                [nw.lng, nw.lat]
+              ];
+
+              setZoneFromCoordinates(coordinates);
+              if (onCancelSwipeDraw) onCancelSwipeDraw();
+            }
+
+            touchStartRef.current = null;
+            setTouchBox(null);
+          }}
+          onPointerCancel={() => {
+            touchStartRef.current = null;
+            setTouchBox(null);
+          }}
+        >
+          {touchBox && (
+            <div style={{
+              position: 'absolute',
+              left: `${Math.min(touchBox.startX, touchBox.currX)}px`,
+              top: `${Math.min(touchBox.startY, touchBox.currY)}px`,
+              width: `${Math.abs(touchBox.currX - touchBox.startX)}px`,
+              height: `${Math.abs(touchBox.currY - touchBox.startY)}px`,
+              border: '2px solid #10b981',
+              backgroundColor: 'rgba(16, 185, 129, 0.25)',
+              borderRadius: '6px',
+              pointerEvents: 'none',
+              boxShadow: '0 0 15px rgba(16, 185, 129, 0.45)'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '-24px',
+                left: '0',
+                backgroundColor: '#10b981',
+                color: '#ffffff',
+                fontSize: '11px',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '4px',
+                whiteSpace: 'nowrap'
+              }}>
+                Soltá para fijar zona
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       
       {isScanning && (
         <div style={{

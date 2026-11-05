@@ -94,6 +94,8 @@ function App() {
   const [confidenceThreshold, setConfidenceThreshold] = useState<number>(40);
   const [isAddingManual, setIsAddingManual] = useState<boolean>(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [isSwipeDrawing, setIsSwipeDrawing] = useState(false);
+  const [frameViewTrigger, setFrameViewTrigger] = useState(0);
   
   // Estado de la Calculadora de Material
   const [plasticPercent, setPlasticPercent] = useState<number>(0);
@@ -685,6 +687,9 @@ function App() {
         isMobile={isMobile}
         onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
         isSidebarOpen={isSidebarOpen}
+        isSwipeDrawing={isSwipeDrawing}
+        onCancelSwipeDraw={() => setIsSwipeDrawing(false)}
+        frameViewTrigger={frameViewTrigger}
       />
 
       {/* Barra de Acciones Rápida para Dispositivos Móviles */}
@@ -711,7 +716,7 @@ function App() {
               maxWidth: '420px',
               backgroundColor: '#1a1d24',
               border: '1px solid #374151',
-              borderRadius: '12px',
+              borderRadius: '14px',
               padding: '10px 14px',
               boxShadow: '0 10px 25px rgba(0,0,0,0.6)',
               display: 'flex',
@@ -728,28 +733,47 @@ function App() {
                   {plasticPercent > 0 && ` (+${plasticPercent}% lona)`}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                style={{
-                  backgroundColor: '#10b981',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  fontSize: '12.5px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
-                  flexShrink: 0
-                }}
-              >
-                <span>Detalles</span>
-                <span>❯</span>
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsSwipeDrawing(true)}
+                  style={{
+                    backgroundColor: '#252a33',
+                    border: '1px solid #374151',
+                    color: '#d1d5db',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="Trazar otra zona con el dedo"
+                >
+                  ✏️ Nueva
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(true)}
+                  style={{
+                    backgroundColor: '#10b981',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                    flexShrink: 0
+                  }}
+                >
+                  <span>Detalles</span>
+                  <span>❯</span>
+                </button>
+              </div>
             </div>
           ) : zoneAreaHa > 0 ? (
             <div style={{
@@ -758,7 +782,7 @@ function App() {
               maxWidth: '420px',
               backgroundColor: '#1a1d24',
               border: '1px solid #10b981',
-              borderRadius: '12px',
+              borderRadius: '14px',
               padding: '10px 14px',
               boxShadow: '0 10px 25px rgba(16, 185, 129, 0.25)',
               display: 'flex',
@@ -768,66 +792,136 @@ function App() {
             }}>
               <div>
                 <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#9ca3af', fontWeight: 600 }}>
-                  Área a escanear
+                  Área delimitada
                 </div>
                 <div style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>
                   {zoneAreaHa.toLocaleString(undefined, { maximumFractionDigits: 2 })} ha
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => handleScanZone(activeZoneId ? savedZones.find(z => z.id === activeZoneId)?.name : undefined)}
-                style={{
-                  backgroundColor: '#10b981',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '9px 14px',
-                  fontSize: '13px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.45)',
-                  flexShrink: 0
-                }}
-              >
-                <span>⚡ Escanear IA</span>
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsSwipeDrawing(true)}
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: '1px solid #4b5563',
+                    color: '#d1d5db',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="Volver a trazar la zona con el dedo"
+                >
+                  ✏️ Redibujar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleScanZone(activeZoneId ? savedZones.find(z => z.id === activeZoneId)?.name : undefined)}
+                  style={{
+                    backgroundColor: '#10b981',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '9px 14px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.45)',
+                    flexShrink: 0
+                  }}
+                >
+                  <span>⚡ Escanear IA</span>
+                </button>
+              </div>
             </div>
           ) : (
             <div style={{
               pointerEvents: 'auto',
-              backgroundColor: 'rgba(26, 29, 36, 0.95)',
+              width: '100%',
+              maxWidth: '420px',
+              backgroundColor: '#1a1d24',
               border: '1px solid #374151',
-              borderRadius: '999px',
-              padding: '7px 14px',
-              boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
-              backdropFilter: 'blur(6px)',
+              borderRadius: '14px',
+              padding: '11px 14px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.7)',
               display: 'flex',
-              alignItems: 'center',
+              flexDirection: 'column',
               gap: '8px'
             }}>
-              <span style={{ fontSize: '11.5px', color: '#d1d5db' }}>
-                ✏️ Dibuja una zona para escanear
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                style={{
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  border: '1px solid rgba(16, 185, 129, 0.4)',
-                  color: '#10b981',
-                  borderRadius: '999px',
-                  padding: '3px 9px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                Mis Zonas ({savedZones.length})
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span>🌱</span> Marcar Área a Escanear
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(true)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#9ca3af',
+                    fontSize: '11.5px',
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  Mis Zonas ({savedZones.length})
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsSwipeDrawing(true)}
+                  style={{
+                    flex: 1.2,
+                    backgroundColor: '#10b981',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  <span>👆</span>
+                  <span>Deslizar con el Dedo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFrameViewTrigger(Date.now())}
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#252a33',
+                    color: '#f9fafb',
+                    border: '1px solid #374151',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px'
+                  }}
+                  title="Encuadra automáticamente el área visible en tu pantalla"
+                >
+                  <span>🎯</span>
+                  <span>Encuadrar Vista</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
