@@ -66,6 +66,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
   const onZoneUpdateRef = useRef(onZoneUpdate);
   onZoneUpdateRef.current = onZoneUpdate;
+  const scanResultRef = useRef(scanResult);
+  scanResultRef.current = scanResult;
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
 
   // Estados para dibujo por deslizamiento con el dedo (Touch Swipe en Mobile)
   const [touchBox, setTouchBox] = useState<{ startX: number; startY: number; currX: number; currY: number } | null>(null);
@@ -107,7 +111,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       const addedIds = draw.current.add(newFeature);
       if (addedIds && addedIds.length > 0) {
-        draw.current.changeMode('simple_select', { featureIds: [addedIds[0]] });
+        draw.current.changeMode('simple_select', { featureIds: [] });
       }
 
       onZoneUpdateRef.current(areaHectares, polyCollection);
@@ -350,6 +354,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
         updateCustomLabels();
         return;
       }
+      // Si hay un resultado de escaneo activo, ignorar eventos de arrastre accidental sobre el polígono durante zoom/gestos
+      if (scanResultRef.current && e.features && e.features.some((f: any) => (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') && !f.properties?.isManual)) {
+        return;
+      }
       recalculateZonePolygon();
     };
 
@@ -363,6 +371,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
     });
 
     map.current.on('draw.selectionchange', (e: any) => {
+      // En mobile o cuando hay detecciones visibles, deseleccionar el polígono de zona para que gestos táctiles (zoom/paneo) no lo arrastren
+      if (e.features && e.features.some((f: any) => (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') && !f.properties?.isManual)) {
+        if (scanResultRef.current || isMobileRef.current) {
+          try {
+            draw.current?.changeMode('simple_select', { featureIds: [] });
+          } catch (err) {}
+          return;
+        }
+      }
+
       if (e.features && e.features.length === 1 && e.features[0].properties.mode === 'draw_text') {
         setSelectedTextFeature(e.features[0].id);
       } else {
@@ -654,6 +672,15 @@ const MapComponent: React.FC<MapComponentProps> = ({
     });
     overlayIdsRef.current = [];
     
+    // Asegurar que ningún polígono quede seleccionado al recibir detecciones para permitir zoom/pan libre
+    if (scanResult && draw.current) {
+      try {
+        draw.current.changeMode('simple_select', { featureIds: [] });
+      } catch (e) {
+        // ignore
+      }
+    }
+
     const updateSource = () => {
       try {
         const source = map.current?.getSource('ai-detections-source') as mapboxgl.GeoJSONSource;

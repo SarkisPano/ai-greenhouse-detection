@@ -315,8 +315,11 @@ function App() {
   const handleZoneUpdate = useCallback((areaHectares: number, geojson: any) => {
     setZoneAreaHa(areaHectares);
     setCurrentGeoJSON(geojson);
-    setRawScanResult(null);
-    setAutoSaveStatus('idle');
+    // Solo reiniciar scanResult si la zona se borró por completo (área 0 o sin geojson)
+    if (areaHectares === 0 || !geojson) {
+      setRawScanResult(null);
+      setAutoSaveStatus('idle');
+    }
   }, []);
 
   const handleSaveZone = async (name: string) => {
