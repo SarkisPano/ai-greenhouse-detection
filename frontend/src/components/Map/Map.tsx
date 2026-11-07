@@ -203,11 +203,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
       return;
     }
 
+    const initialCenter: [number, number] = isMobile ? [44.5136, 40.1811] : [44.5136, 40.1811]; // Ereván, Armenia
+    const initialZoom = isMobile ? 12.5 : 13;
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/satellite-streets-v12',
-      center: [44.2867, 40.0958], // Aknashen / Gai, Armenia (zona de invernaderos)
-      zoom: 16.5,
+      center: initialCenter,
+      zoom: initialZoom,
     });
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
