@@ -1,0 +1,137 @@
+name: Deploy AI Engine to VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ai-engine/**'
+      - '.github/workflows/deploy-ai-engine.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-ai-engine-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Python Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile check ai-engine
+        run: python -m py_compile ai-engine/config.py ai-engine/main.py ai-engine/tasks.py
+
+  deploy:
+    name: Deploy to Production VPS
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+        run: |
+          missing=()
+          [ -z "$VPS_HOST" ] && missing+=("VPS_HOST")
+          [ -z "$VPS_USER" ] && missing+=("VPS_USER")
+          [ -z "$VPS_SSH_KEY" ] && missing+=("VPS_SSH_KEY")
+          [ -z "$VPS_APP_DIR" ] && missing+=("VPS_APP_DIR")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Faltan configurar estos Secrets en GitHub (Settings -> Secrets and variables -> Actions): ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          SSH_PORT="${VPS_PORT:-22}"
+          ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Pull changes and restart AI Engine containers
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+        run: |
+          SSH_PORT="${VPS_PORT:-22}"
+          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" bash -s -- "$VPS_APP_DIR" << 'EOF'
+          set -euo pipefail
+          TARGET_DIR="${1/#\~/$HOME}"
+          cd "$TARGET_DIR"
+
+          if [ -d .git ]; then
+            git pull --ff-only origin main
+          elif [ -d ../.git ]; then
+            (cd .. && git pull --ff-only origin main)
+          else
+            echo "Error: No se encontró un repositorio Git en $TARGET_DIR"
+            exit 1
+          fi
+
+          if [ -f docker-compose.yml ]; then
+            ENGINE_DIR="."
+          elif [ -f ai-engine/docker-compose.yml ]; then
+            ENGINE_DIR="ai-engine"
+          else
+            echo "Error: No se encontró docker-compose.yml en $TARGET_DIR ni en $TARGET_DIR/ai-engine"
+            exit 1
+          fi
+
+          cd "$ENGINE_DIR"
+          if docker compose version >/dev/null 2>&1; then
+            COMPOSE_CMD="docker compose"
+          else
+            COMPOSE_CMD="docker-compose"
+          fi
+
+          $COMPOSE_CMD up -d --build --force-recreate api worker
+
+          for i in $(seq 1 20); do
+            if command -v curl >/dev/null 2>&1; then
+              if curl -fsS http://127.0.0.1:5000/health >/dev/null 2>&1; then
+                echo "AI Engine desplegado y saludable."
+                exit 0
+              fi
+            elif command -v python3 >/dev/null 2>&1; then
+              if python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)" >/dev/null 2>&1; then
+                echo "AI Engine desplegado y saludable."
+                exit 0
+              fi
+            else
+              $COMPOSE_CMD ps
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "Error: /health en :5000 no respondió tras reiniciar api y worker."
+          $COMPOSE_CMD logs --tail=40 api worker
+          exit 1
+          EOF
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
