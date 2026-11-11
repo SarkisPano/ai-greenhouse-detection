@@ -15,7 +15,7 @@ import styles from './Map.module.css';
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
 interface MapComponentProps {
-  onZoneUpdate: (areaHectares: number, geojson: any) => void;
+  onZoneUpdate: (areaHectares: number, geojson: any, isNewZone?: boolean) => void;
   zoneToLoad: { geojson: any; timestamp: number } | null;
   scanResult?: any;
   plasticPercent?: number;
@@ -114,7 +114,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         draw.current.changeMode('simple_select', { featureIds: [] });
       }
 
-      onZoneUpdateRef.current(areaHectares, polyCollection);
+      onZoneUpdateRef.current(areaHectares, polyCollection, true);
     } catch (err) {
       console.error('Error al fijar coordenadas de zona:', err);
     }
@@ -276,7 +276,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       }
     };
 
-    const recalculateZonePolygon = () => {
+    const recalculateZonePolygon = (isNewZone = false) => {
       try {
         if (!draw.current) return;
         updateCustomLabels();
@@ -292,9 +292,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
           };
           const areaSquareMeters = area(polyCollection as any);
           const areaHectares = areaSquareMeters / 10000;
-          onZoneUpdate(areaHectares, polyCollection);
+          onZoneUpdateRef.current(areaHectares, polyCollection, isNewZone);
         } else {
-          onZoneUpdate(0, null);
+          onZoneUpdateRef.current(0, null, false);
         }
       } catch (error) {
         console.error('Error al calcular el área:', error);
@@ -348,7 +348,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         }
       }
       
-      recalculateZonePolygon();
+      recalculateZonePolygon(true);
     };
 
     const handleDrawUpdateOrDelete = (e: any) => {
@@ -357,11 +357,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
         updateCustomLabels();
         return;
       }
-      // Si hay un resultado de escaneo activo, ignorar eventos de arrastre accidental sobre el polígono durante zoom/gestos
-      if (scanResultRef.current && e.features && e.features.some((f: any) => (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') && !f.properties?.isManual)) {
+      // Si hay un resultado de escaneo activo, ignorar arrastres accidentales sobre el polígono durante zoom/gestos
+      if (scanResultRef.current && e.type !== 'draw.delete' && e.features && e.features.some((f: any) => (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') && !f.properties?.isManual)) {
         return;
       }
-      recalculateZonePolygon();
+      recalculateZonePolygon(false);
     };
 
     map.current.on('draw.create', handleDrawCreate);

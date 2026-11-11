@@ -111,27 +111,60 @@ def calculate_iou_and_containment(poly1, poly2):
 def orthogonalize_mercator_polygon(poly_merc: Polygon, cos_lat: float, confidence: float = 100.0) -> Polygon:
     """
     Regulariza un polígono en coordenadas Web Mercator:
+    - Limpia espigas/orejas muy finas (<= 1.4m) antes de medir la caja envolvente.
     - Alinea el polígono con el ángulo dominante de sus paredes largas (ponderación cúbica 4*theta).
-    - En detecciones de confianza media/baja (< 75%), devuelve directamente el rectángulo puro de 4 esquinas
-      para no copiar mordiscos de máscaras dudosas.
-    - Detecta bolsillos vacíos independientes respecto a la caja envolvente rotada (erosionando 1.8m)
-      y exige que cada bolsillo real tenga >= 35 m² Y represente >= 3.2% del área de la caja envolvente.
-    - Rellena las esquinas falsas o mordiscos chicos para que las paredes alineadas queden 100% rectas,
-      y reconstruye únicamente los escalones arquitectónicos grandes a 90°.
+    - En detecciones de confianza < 75%, solo fuerza rectángulo puro si el polígono ya es aprox. rectangular
+      (fill_ratio >= 0.78); si tiene forma en L/T o huecos grandes, conserva los bolsillos vacíos.
+    - Detecta bolsillos vacíos independientes respecto a la caja envolvente rotada (erosionando 1.3m)
+      y exige que cada bolsillo real tenga >= 20 m² Y represente >= 2.2% del área de la caja envolvente.
+    - Garantiza un tope anti-inflación (<= +25% sobre la máscara cruda) y preserva patios internos grandes.
     """
     if poly_merc.is_empty or poly_merc.area <= 0:
         return poly_merc
 
     scale_m = 1.0 / max(cos_lat, 0.1)  # Unidades Mercator por metro físico
-    rect_merc = poly_merc.minimum_rotated_rectangle
+    raw_area = poly_merc.area
+
+    large_holes = []
+    if hasattr(poly_merc, 'interiors'):
+        for ring in poly_merc.interiors:
+            hole_poly = Polygon(ring).buffer(0)
+            if not hole_poly.is_empty and (hole_poly.area * (cos_lat ** 2)) >= 25.0:
+                large_holes.append(hole_poly)
+
+    work_poly = poly_merc
+    spike_trimmed = poly_merc.buffer(-0.7 * scale_m, join_style=2).buffer(0.7 * scale_m, join_style=2)
+    if spike_trimmed.geom_type == 'MultiPolygon':
+        spike_trimmed = max(spike_trimmed.geoms, key=lambda p: p.area)
+    if not spike_trimmed.is_empty and spike_trimmed.area >= 0.88 * raw_area:
+        work_poly = spike_trimmed
+
+    rect_merc = work_poly.minimum_rotated_rectangle
     if rect_merc.is_empty or rect_merc.area <= 0:
         return poly_merc
 
+    def _finalize(cand: Polygon) -> Polygon:
+        res = cand
+        if large_holes and not res.is_empty:
+            res = res.difference(unary_union(large_holes)).buffer(0)
+            if res.geom_type == 'MultiPolygon':
+                res = max(res.geoms, key=lambda p: p.area)
+        if res.is_empty or res.area <= 0:
+            return poly_merc
+        if res.area > 1.25 * raw_area:
+            if not large_holes and rect_merc.area <= 1.25 * raw_area:
+                return rect_merc
+            fallback = work_poly.simplify(0.8 * scale_m, preserve_topology=True)
+            if fallback.geom_type == 'MultiPolygon':
+                fallback = max(fallback.geoms, key=lambda p: p.area)
+            return fallback if (not fallback.is_empty and fallback.area > 0) else poly_merc
+        return res
+
     # 1. Obtener el ángulo dominante real de las paredes usando media circular armónica (4*theta, invariante a 90°)
-    rough_simp = poly_merc.simplify(0.8 * scale_m, preserve_topology=True)
+    rough_simp = work_poly.simplify(0.8 * scale_m, preserve_topology=True)
     if rough_simp.geom_type == 'MultiPolygon':
         rough_simp = max(rough_simp.geoms, key=lambda p: p.area)
-    rough_coords = list(rough_simp.exterior.coords) if not rough_simp.is_empty else list(poly_merc.exterior.coords)
+    rough_coords = list(rough_simp.exterior.coords) if not rough_simp.is_empty else list(work_poly.exterior.coords)
 
     sum_sin4 = 0.0
     sum_cos4 = 0.0
@@ -152,25 +185,31 @@ def orthogonalize_mercator_polygon(poly_merc: Polygon, cos_lat: float, confidenc
         angle_rad = math.atan2(rect_coords[1][1] - rect_coords[0][1], rect_coords[1][0] - rect_coords[0][0])
 
     angle_deg = math.degrees(angle_rad)
-    origin = poly_merc.centroid
-    rot_poly = rotate(poly_merc, -angle_deg, origin=origin, use_radians=False).buffer(0)
+    origin = work_poly.centroid
+    rot_poly = rotate(work_poly, -angle_deg, origin=origin, use_radians=False).buffer(0)
     if rot_poly.geom_type == 'MultiPolygon':
         rot_poly = max(rot_poly.geoms, key=lambda p: p.area)
     if rot_poly.is_empty:
-        return rect_merc
+        return _finalize(rect_merc)
 
     rot_box = box(*rot_poly.bounds)
     if rot_box.is_empty or rot_box.area <= 0:
-        return rect_merc
+        return _finalize(rect_merc)
 
-    # En predicciones amarillas/naranjas (< 75% de confianza), no copiar mordiscos de la máscara: forzar rectángulo limpio
-    if confidence < 75.0:
-        return rotate(rot_box, angle_deg, origin=origin, use_radians=False)
+    best_rect = rotate(rot_box, angle_deg, origin=origin, use_radians=False)
+    if rect_merc.area * 1.06 < rot_box.area:
+        best_rect = rect_merc
+
+    fill_ratio = work_poly.area / min(rot_box.area, rect_merc.area)
+
+    # En predicciones amarillas/naranjas (< 75% de confianza), solo forzar rectángulo si ya llena >= 78% de su caja
+    if confidence < 75.0 and fill_ratio >= 0.78 and not large_holes:
+        return _finalize(best_rect)
 
     diff = rot_box.difference(rot_poly)
 
-    # 2. Detectar bolsillos vacíos reales (erosión de 1.8m para ignorar bordes redondeados y ruido)
-    eroded_diff = diff.buffer(-1.8 * scale_m) if not diff.is_empty else Polygon()
+    # 2. Detectar bolsillos vacíos reales (erosión de 1.3m para ignorar bordes redondeados y conservar huecos >= 2.7m)
+    eroded_diff = diff.buffer(-1.3 * scale_m) if not diff.is_empty else Polygon()
     eroded_geoms = []
     if not eroded_diff.is_empty:
         if eroded_diff.geom_type == 'Polygon':
@@ -180,12 +219,14 @@ def orthogonalize_mercator_polygon(poly_merc: Polygon, cos_lat: float, confidenc
 
     valid_eroded_pockets = [
         g for g in eroded_geoms
-        if (g.area * (cos_lat ** 2)) >= 35.0 and (g.area / rot_box.area) >= 0.032
+        if (g.area * (cos_lat ** 2)) >= 20.0 and (g.area / rot_box.area) >= 0.022
     ]
 
-    # Si no hay ningún bolsillo vacío real significativo, es un invernadero rectangular puro de 4 vértices
+    # Si no hay ningún bolsillo vacío real significativo, devolver rectángulo si es rectangular o contorno simplificado si es cóncavo
     if not valid_eroded_pockets:
-        return rotate(rot_box, angle_deg, origin=origin, use_radians=False)
+        if fill_ratio >= 0.78 and not large_holes:
+            return _finalize(best_rect)
+        return _finalize(work_poly.simplify(0.8 * scale_m, preserve_topology=True))
 
     # 3. Rellenar esquinas falsas o mordiscos chicos para que las paredes alineadas queden 100% rectas
     valid_zones = unary_union([
@@ -201,11 +242,11 @@ def orthogonalize_mercator_polygon(poly_merc: Polygon, cos_lat: float, confidenc
     if simp_rot.geom_type == 'MultiPolygon':
         simp_rot = max(simp_rot.geoms, key=lambda p: p.area)
     if simp_rot.is_empty or not hasattr(simp_rot, 'exterior') or simp_rot.exterior is None:
-        return rotate(rot_box, angle_deg, origin=origin, use_radians=False)
+        return _finalize(best_rect)
 
     pts = list(simp_rot.exterior.coords)[:-1]
     if len(pts) < 4:
-        return rotate(rot_box, angle_deg, origin=origin, use_radians=False)
+        return _finalize(best_rect)
 
     # Filtrar micro-vértices (< 2.0m)
     clean_pts = [pts[0]]
@@ -217,7 +258,7 @@ def orthogonalize_mercator_polygon(poly_merc: Polygon, cos_lat: float, confidenc
         clean_pts.pop()
 
     if len(clean_pts) < 4:
-        return rotate(rot_box, angle_deg, origin=origin, use_radians=False)
+        return _finalize(best_rect)
 
     # Convertir diagonales de bolsillos reales en un único escalón ortogonal limpio a 90°
     tan_thresh = 0.268  # tan(15°)
@@ -262,7 +303,7 @@ def orthogonalize_mercator_polygon(poly_merc: Polygon, cos_lat: float, confidenc
             segments.append({'type': 'V', 'val': x_mid, 'len': seg_len, 'p1': p1, 'p2': p2})
 
     if len(segments) < 4:
-        return rotate(rot_box, angle_deg, origin=origin, use_radians=False)
+        return _finalize(best_rect)
 
     # Fusionar aristas consecutivas del mismo tipo si su desnivel es <= 2.4m (elimina escaloncitos chicos)
     merged_segs = [segments[0]]
@@ -320,11 +361,11 @@ def orthogonalize_mercator_polygon(poly_merc: Polygon, cos_lat: float, confidenc
             if not cand_poly.is_empty and cand_poly.area > 0:
                 iou, _ = calculate_iou_and_containment(cand_poly, cleaned_rot_poly)
                 if iou >= 0.80:
-                    return rotate(cand_poly, angle_deg, origin=origin, use_radians=False)
+                    return _finalize(rotate(cand_poly, angle_deg, origin=origin, use_radians=False))
         except Exception:
             pass
 
-    return rotate(simp_rot, angle_deg, origin=origin, use_radians=False)
+    return _finalize(rotate(simp_rot, angle_deg, origin=origin, use_radians=False))
 
 
 def fetch_mapbox_tile(idx: int, c_lon: float, c_lat: float):
@@ -586,11 +627,11 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
                     min_area = min(p1.area, p2.area)
                     overlap_ratio = inter / min_area if min_area > 0 else 0
 
-                    # No permitir que una predicción débil (< 38%) deforme a una fuerte (>= 75%)
-                    if min(conf1, conf2) < 38.0 and max(conf1, conf2) >= 75.0:
+                    # No permitir que una predicción débil (< 48%) deforme a una fuerte (>= 75%)
+                    if min(conf1, conf2) < 48.0 and max(conf1, conf2) >= 75.0:
                         continue
 
-                    if overlap_ratio > 0.15:
+                    if overlap_ratio > 0.25:
                         G.add_edge(i, j)
 
         merged_features = []
@@ -609,11 +650,15 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
             if united.is_empty or not hasattr(united, 'exterior') or united.exterior is None:
                 continue
 
-            # Regularización y ortogonalización en proyección métrica Web Mercator
+            # Regularización y ortogonalización en proyección métrica Web Mercator (preservando patios internos)
             max_conf = max(f['properties']['confidence'] for f in comp_feats)
             cos_lat = math.cos(math.radians(united.centroid.y))
-            united_merc_coords = [lonlat_to_mercator(lon, lat) for lon, lat in united.exterior.coords]
-            united_merc_poly = Polygon(united_merc_coords).buffer(0)
+            exterior_merc = [lonlat_to_mercator(lon, lat) for lon, lat in united.exterior.coords]
+            interiors_merc = [
+                [lonlat_to_mercator(lon, lat) for lon, lat in ring.coords]
+                for ring in united.interiors
+            ]
+            united_merc_poly = Polygon(exterior_merc, interiors_merc).buffer(0)
             if united_merc_poly.geom_type == 'MultiPolygon':
                 united_merc_poly = max(united_merc_poly.geoms, key=lambda p: p.area)
 
@@ -649,12 +694,17 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
             if max_conf < 50.0 and area_m2 < 70.0:
                 continue
 
-            final_c = [list(mercator_to_lonlat(mx, my)) for mx, my in ortho_merc_poly.exterior.coords]
+            exterior_lonlat = [list(mercator_to_lonlat(mx, my)) for mx, my in ortho_merc_poly.exterior.coords]
+            interiors_lonlat = [
+                [list(mercator_to_lonlat(mx, my)) for mx, my in hole.coords]
+                for hole in ortho_merc_poly.interiors
+            ]
+            coords_rings = [exterior_lonlat] + interiors_lonlat
 
             merged_features.append({
                 'type': 'Feature',
                 'id': comp_feats[0]['id'],
-                'geometry': {'type': 'Polygon', 'coordinates': [final_c]},
+                'geometry': {'type': 'Polygon', 'coordinates': coords_rings},
                 'properties': {
                     'id': comp_feats[0]['id'],
                     'class': 'invernadero',
@@ -665,28 +715,66 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
             })
         features = merged_features
 
-    # 2. NMS Deduplication
+    # 2. NMS Deduplication + recorte de solapamiento residual para evitar doble conteo de m²
     features.sort(key=lambda f: f['properties']['confidence'], reverse=True)
     final_features = []
+    final_merc_polys = []
 
     for f in features:
-        poly_f = Polygon(f['geometry']['coordinates'][0]).buffer(0)
+        coords_rings = f['geometry']['coordinates']
+        ext_wgs = coords_rings[0]
+        holes_wgs = coords_rings[1:] if len(coords_rings) > 1 else []
+        poly_f = Polygon(ext_wgs, holes_wgs).buffer(0)
         if poly_f.is_empty or poly_f.area <= 0:
             continue
         if poly_f.geom_type == 'MultiPolygon':
             poly_f = max(poly_f.geoms, key=lambda p: p.area)
 
+        cos_lat = math.cos(math.radians(poly_f.centroid.y))
+        scale_m = 1.0 / max(cos_lat, 0.1)
+        ext_merc = [lonlat_to_mercator(lon, lat) for lon, lat in poly_f.exterior.coords]
+        holes_merc = [[lonlat_to_mercator(lon, lat) for lon, lat in r.coords] for r in poly_f.interiors]
+        merc_f = Polygon(ext_merc, holes_merc).buffer(0)
+        if merc_f.is_empty or merc_f.area <= 0:
+            continue
+        if merc_f.geom_type == 'MultiPolygon':
+            merc_f = max(merc_f.geoms, key=lambda p: p.area)
+
         keep = True
-        for ff in final_features:
-            poly_ff = Polygon(ff['geometry']['coordinates'][0]).buffer(0)
-            if poly_ff.geom_type == 'MultiPolygon':
-                poly_ff = max(poly_ff.geoms, key=lambda p: p.area)
-            iou, containment = calculate_iou_and_containment(poly_f, poly_ff)
+        overlapping_kept = []
+        for merc_ff in final_merc_polys:
+            if not merc_f.intersects(merc_ff):
+                continue
+            iou, containment = calculate_iou_and_containment(merc_f, merc_ff)
             if iou > 0.35 or containment > 0.50:
                 keep = False
                 break
-        if keep:
-            final_features.append(f)
+            overlapping_kept.append(merc_ff)
+
+        if not keep:
+            continue
+
+        if overlapping_kept:
+            kept_union = unary_union(overlapping_kept)
+            trimmed = merc_f.difference(kept_union).buffer(0)
+            if trimmed.geom_type == 'MultiPolygon':
+                trimmed = max(trimmed.geoms, key=lambda p: p.area)
+            if trimmed.is_empty or not hasattr(trimmed, 'exterior') or trimmed.exterior is None:
+                continue
+            if trimmed.buffer(-1.0 * scale_m).is_empty:
+                continue
+            new_area_m2 = trimmed.area * (cos_lat ** 2)
+            conf_f = f['properties']['confidence']
+            if new_area_m2 < 35.0 or (conf_f < 50.0 and new_area_m2 < 70.0):
+                continue
+            merc_f = trimmed
+            new_ext = [list(mercator_to_lonlat(mx, my)) for mx, my in merc_f.exterior.coords]
+            new_holes = [[list(mercator_to_lonlat(mx, my)) for mx, my in h.coords] for h in merc_f.interiors]
+            f['geometry']['coordinates'] = [new_ext] + new_holes
+            f['properties']['area_m2'] = round(new_area_m2, 1)
+
+        final_features.append(f)
+        final_merc_polys.append(merc_f)
 
     # Normalizar IDs limpios en string para cada feature tras NMS
     for idx, f in enumerate(final_features, 1):

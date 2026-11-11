@@ -104,6 +104,7 @@ function App() {
   const [savedZones, setSavedZones] = useState<SavedZone[]>([]);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentScanIdRef = useRef<string | null>(null);
+  const startingNewZoneRef = useRef<boolean>(false);
 
   const handleCancelScan = useCallback(async () => {
     if (pollIntervalRef.current) {
@@ -312,13 +313,17 @@ function App() {
     }
   }, [fetchZones]);
 
-  const handleZoneUpdate = useCallback((areaHectares: number, geojson: any) => {
+  const handleZoneUpdate = useCallback((areaHectares: number, geojson: any, isNewZone = false) => {
     setZoneAreaHa(areaHectares);
     setCurrentGeoJSON(geojson);
-    // Solo reiniciar scanResult si la zona se borró por completo (área 0 o sin geojson)
-    if (areaHectares === 0 || !geojson) {
+    // Reiniciar scanResult si la zona se borró por completo o si el usuario trazó explícitamente una zona nueva
+    if (areaHectares === 0 || !geojson || isNewZone) {
       setRawScanResult(null);
       setAutoSaveStatus('idle');
+      if (startingNewZoneRef.current) {
+        setActiveZoneId(null);
+        startingNewZoneRef.current = false;
+      }
     }
   }, []);
 
@@ -473,6 +478,25 @@ function App() {
 
       targetZoneId = newZone.id;
       setActiveZoneId(newZone.id);
+      await fetchZones();
+    } else {
+      // Sincronizar la geometría actual de pantalla en Supabase para no re-escanear un polígono desactualizado
+      const { error: syncErr } = await supabase
+        .from('zones')
+        .update({
+          area_ha: zoneAreaHa,
+          plastic_percent: plasticPercent,
+          geom
+        })
+        .eq('id', targetZoneId);
+
+      if (syncErr) {
+        console.error('Error syncing active zone before scan:', syncErr);
+        alert('No se pudo actualizar la zona antes de iniciar el escaneo.');
+        setIsScanning(false);
+        setScanProgress(null);
+        return;
+      }
       await fetchZones();
     }
 
@@ -696,7 +720,10 @@ function App() {
         onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
         isSidebarOpen={isSidebarOpen}
         isSwipeDrawing={isSwipeDrawing}
-        onCancelSwipeDraw={() => setIsSwipeDrawing(false)}
+        onCancelSwipeDraw={() => {
+          startingNewZoneRef.current = false;
+          setIsSwipeDrawing(false);
+        }}
         frameViewTrigger={frameViewTrigger}
       />
 
@@ -732,19 +759,26 @@ function App() {
               justifyContent: 'space-between',
               gap: '10px'
             }}>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: '14px', fontWeight: 800, color: '#10b981' }}>
                   🌿 {scanResult.count} invernaderos
                 </div>
-                <div style={{ fontSize: '11px', color: '#9ca3af' }}>
-                  {scanResult.totalArea.toLocaleString()} m² huella
-                  {plasticPercent > 0 && ` (+${plasticPercent}% lona)`}
+                <div style={{ fontSize: '11px', color: '#9ca3af', lineHeight: 1.35 }}>
+                  {scanResult.totalArea.toLocaleString()} m² huella plana
+                </div>
+                <div style={{ fontSize: '11.5px', fontWeight: 700, color: plasticPercent > 0 ? '#34d399' : '#d1d5db' }}>
+                  {plasticPercent > 0
+                    ? `${Math.round(scanResult.totalArea * (1 + plasticPercent / 100)).toLocaleString()} m² lona/techo (+${plasticPercent}%)`
+                    : 'Lona +0% (ajustar curva en Detalles)'}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                 <button
                   type="button"
-                  onClick={() => setIsSwipeDrawing(true)}
+                  onClick={() => {
+                    startingNewZoneRef.current = true;
+                    setIsSwipeDrawing(true);
+                  }}
                   style={{
                     backgroundColor: '#252a33',
                     border: '1px solid #374151',

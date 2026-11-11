@@ -397,7 +397,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <p className={styles.metricValue}>
                   {scanResult ? scanResult.totalArea.toLocaleString() : '--'}
                 </p>
-                <span className={styles.metricSub}>m² de huella en el suelo</span>
+                <span className={styles.metricSub}>m² de huella plana en el suelo</span>
 
                 {scanResult && (
                   <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border)' }}>
@@ -408,7 +408,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         onChange={(e) => onPlasticPercentChange(Number(e.target.value))}
                         className={styles.percentSelect}
                       >
-                        <option value="0">En blanco (+0%)</option>
+                        <option value="0">Solo huella (+0%)</option>
                         <option value="5">+ 5%</option>
                         <option value="10">+ 10%</option>
                         <option value="15">+ 15%</option>
@@ -422,7 +422,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <p className={styles.metricValue} style={{ color: 'var(--color-primary)', fontSize: '1.5rem' }}>
                       {Math.round(scanResult.totalArea * (1 + plasticPercent / 100)).toLocaleString()}
                     </p>
-                    <span className={styles.metricSub}>m² de material estimado requerido</span>
+                    <span className={styles.metricSub}>m² estimados de techo/lona (curvatura + margen)</span>
                   </div>
                 )}
               </>
