@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
+import hashlib
 import os
 import re
 import threading
@@ -65,6 +66,40 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _verify_supabase_jwt(request: Request) -> None:
+    """Valida el JWT de sesión de Supabase en el header Authorization."""
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autorizado: token faltante")
+
+    token = auth_header[7:].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="No autorizado: token vacío")
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    cache_key = f"auth_ok:{token_hash}"
+    try:
+        if redis_client.get(cache_key):
+            return
+    except Exception:
+        pass
+
+    try:
+        user_res = supabase_client.auth.get_user(token)
+        if not user_res or not getattr(user_res, "user", None):
+            raise HTTPException(status_code=401, detail="Sesión inválida o expirada")
+    except HTTPException:
+        raise
+    except Exception as auth_err:
+        print(f"[Auth] Token rechazado: {auth_err}")
+        raise HTTPException(status_code=401, detail="Sesión inválida o expirada")
+
+    try:
+        redis_client.set(cache_key, "1", ex=120)
+    except Exception:
+        pass
+
+
 # Nota: Los encabezados CORS los inyecta Caddy a nivel de proxy inverso.
 # No agregamos CORSMiddleware aquí para evitar duplicar el encabezado 'Access-Control-Allow-Origin: *, *'.
 
@@ -127,6 +162,7 @@ def set_scan_notify_email(scan_id: str, body: NotifyEmailRequest, request: Reque
     """
     Registra o actualiza en caliente el email de notificación para un escaneo en curso.
     """
+    _verify_supabase_jwt(request)
     if not _is_valid_uuid(scan_id):
         raise HTTPException(status_code=400, detail="scan_id inválido")
 
@@ -158,6 +194,7 @@ def handle_scan_webhook(payload: dict, request: Request):
     Recibe la petición directa o webhook.
     Usa función síncrona para que FastAPI lo ejecute en threadpool sin bloquear el event loop.
     """
+    _verify_supabase_jwt(request)
     client_ip = _get_client_ip(request)
     if not _check_rate_limit(f"rl:webhook:{client_ip}", limit=10, window_sec=60):
         raise HTTPException(status_code=429, detail="Demasiadas peticiones. Intentá nuevamente en unos segundos.")

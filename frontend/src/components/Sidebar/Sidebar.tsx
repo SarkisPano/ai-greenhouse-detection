@@ -41,6 +41,8 @@ interface SidebarProps {
   onNotifyEmailChange: (email: string) => void;
   notifyEmailSavedMsg?: string;
   onRegisterNotifyEmail: (email: string) => void;
+  userEmail?: string;
+  onSignOut?: () => void;
 }
 
 interface TownPlaceSuggestion {
@@ -60,7 +62,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   plasticPercent, onPlasticPercentChange, autoSaveStatus = 'idle', onExportExcel,
   onCancelScan, isMobile = false,
   towns, selectedTown, onSelectTown, onSetSelectedTownOnly, onAddTown, onDeleteTown,
-  notifyEmail, onNotifyEmailChange, notifyEmailSavedMsg, onRegisterNotifyEmail
+  notifyEmail, onNotifyEmailChange, notifyEmailSavedMsg, onRegisterNotifyEmail,
+  userEmail = '', onSignOut
 }) => {
   const [view, setView] = useState<'main' | 'pueblos' | 'library'>('main');
   const [zoneName, setZoneName] = useState('');
@@ -229,6 +232,45 @@ const Sidebar: React.FC<SidebarProps> = ({
       </button>
     </div>
   );
+
+  const renderAccountFooter = () => {
+    if (!onSignOut) return null;
+    return (
+      <div style={{
+        marginTop: '0.65rem',
+        paddingTop: '0.6rem',
+        borderTop: '1px solid var(--color-border)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '0.5rem'
+      }}>
+        <span style={{
+          fontSize: '0.72rem',
+          color: '#9ca3af',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }} title={userEmail}>
+          👤 {userEmail || 'Sesión activa'}
+        </span>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className={styles.secondaryButton}
+          style={{
+            padding: '0.3rem 0.55rem',
+            fontSize: '0.72rem',
+            color: '#fca5a5',
+            borderColor: 'rgba(239, 68, 68, 0.4)',
+            flexShrink: 0
+          }}
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    );
+  };
 
   const renderBrandHeader = (title: string, subtitle: string) => (
     <div className={styles.header}>
@@ -425,6 +467,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               })
             )}
           </div>
+          {onSignOut && (
+            <div className={styles.footer} style={{ paddingTop: '0.35rem' }}>
+              {renderAccountFooter()}
+            </div>
+          )}
         </div>
       </>
     );
@@ -488,6 +535,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               ))
             )}
           </div>
+          {onSignOut && (
+            <div className={styles.footer} style={{ paddingTop: '0.35rem' }}>
+              {renderAccountFooter()}
+            </div>
+          )}
         </div>
       </>
     );
@@ -932,6 +984,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               ← Volver al Mapa Satelital
             </button>
           )}
+          {renderAccountFooter()}
         </div>
       </div>
 

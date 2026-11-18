@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import { supabase, API_BASE_URL } from './supabaseClient';
 import MapComponent from './components/Map/Map';
@@ -120,6 +121,14 @@ const getPolygonCentroidLatLon = (geometry: any): { lat: number; lon: number } |
 };
 
 function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [loginError, setLoginError] = useState<string>('');
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+
   const isMobile = useIsMobile();
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -534,6 +543,27 @@ function App() {
   }, [fetchZones]);
 
   useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (!mounted) return;
+      setSession(initialSession);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
     fetchZones();
 
     // Si el usuario cerró la app mientras corría un escaneo largo de un pueblo, retomarlo automáticamente
@@ -604,7 +634,7 @@ function App() {
         clearInterval(pollIntervalRef.current);
       }
     };
-  }, [fetchZones, startScanPolling]);
+  }, [session, fetchZones, startScanPolling]);
 
   const handleCustomLabelsChange = useCallback((labels: any[]) => {
     customLabelsRef.current = labels;
@@ -990,9 +1020,14 @@ function App() {
     }
     if (currentScanIdRef.current) {
       try {
+        const { data: { session: currSession } } = await supabase.auth.getSession();
+        const token = currSession?.access_token || '';
         const res = await fetch(`${API_BASE_URL}/scans/${currentScanIdRef.current}/notify-email`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({ email: clean })
         });
         if (res.ok) {
@@ -1129,12 +1164,17 @@ function App() {
     
     // 3. Notificar al motor de IA (con reintentos silenciosos y fallback autónomo de base de datos)
     const notifyAiEngine = async () => {
+      const { data: { session: currSession } } = await supabase.auth.getSession();
+      const token = currSession?.access_token || '';
       const maxRetries = 3;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const res = await fetch(`${API_BASE_URL}/webhook/scans`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({
               type: 'INSERT',
               table: 'ai_scans',
@@ -1264,6 +1304,219 @@ function App() {
     XLSX.writeFile(wb, fileName);
   };
 
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = loginEmail.trim();
+    if (!email || !loginPassword) {
+      setLoginError('Completá tu email y contraseña.');
+      return;
+    }
+    setLoginError('');
+    setIsLoggingIn(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: loginPassword
+      });
+      if (error) {
+        if (error.message.toLowerCase().includes('invalid login')) {
+          setLoginError('Email o contraseña incorrectos.');
+        } else {
+          setLoginError(error.message || 'No se pudo iniciar sesión.');
+        }
+      } else {
+        setLoginPassword('');
+      }
+    } catch {
+      setLoginError('Error de conexión al intentar ingresar.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    currentScanIdRef.current = null;
+    setIsScanning(false);
+    setScanProgress(null);
+    setActiveZoneId(null);
+    setZoneAreaHa(0);
+    setCurrentGeoJSON(null);
+    setRawScanResult(null);
+    setSavedZones([]);
+    setTowns([]);
+    setSelectedTown('');
+    await supabase.auth.signOut();
+  };
+
+  if (authLoading) {
+    return (
+      <div style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#0f1115',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '14px',
+        color: '#e5e7eb',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <img src="/logo.png" alt="SUPER+" style={{ height: '64px', objectFit: 'contain' }} />
+        <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Verificando sesión...</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div style={{
+        width: '100vw',
+        minHeight: '100vh',
+        background: 'radial-gradient(circle at top, #17202a 0%, #0f1115 65%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '400px',
+          backgroundColor: '#161b22',
+          border: '1px solid #2d3748',
+          borderRadius: '16px',
+          padding: '2rem 1.75rem',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+            <img src="/logo.png" alt="SUPER+" style={{ height: '64px', objectFit: 'contain', margin: '0 auto 0.75rem', display: 'block' }} />
+            <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
+              SUPER+
+            </h1>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#9ca3af' }}>
+              Detección Inteligente de Invernaderos
+            </p>
+          </div>
+
+          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.95rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                Correo electrónico
+              </label>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="usuario@empresa.com"
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  backgroundColor: '#0f1115',
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                  color: '#f9fafb',
+                  padding: '0.7rem 0.85rem',
+                  fontSize: '0.92rem',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                Contraseña
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  autoComplete="current-password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    backgroundColor: '#0f1115',
+                    border: '1px solid #374151',
+                    borderRadius: '8px',
+                    color: '#f9fafb',
+                    padding: '0.7rem 2.6rem 0.7rem 0.85rem',
+                    fontSize: '0.92rem',
+                    outline: 'none'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#9ca3af',
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    padding: '4px'
+                  }}
+                  title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            {loginError && (
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.14)',
+                border: '1px solid rgba(239, 68, 68, 0.45)',
+                color: '#fca5a5',
+                borderRadius: '8px',
+                padding: '0.55rem 0.75rem',
+                fontSize: '0.8rem',
+                fontWeight: 600
+              }}>
+                ⚠️ {loginError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              style={{
+                marginTop: '0.25rem',
+                width: '100%',
+                backgroundColor: '#10b981',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.8rem',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                cursor: isLoggingIn ? 'wait' : 'pointer',
+                opacity: isLoggingIn ? 0.7 : 1,
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+              }}
+            >
+              {isLoggingIn ? 'Ingresando...' : 'Iniciar Sesión'}
+            </button>
+          </form>
+
+          <p style={{ margin: '1.2rem 0 0', textAlign: 'center', fontSize: '0.72rem', color: '#6b7280' }}>
+            Acceso exclusivo para usuarios autorizados.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden', position: 'relative' }}>
       
@@ -1306,6 +1559,8 @@ function App() {
         onNotifyEmailChange={setNotifyEmail}
         notifyEmailSavedMsg={notifyEmailSavedMsg}
         onRegisterNotifyEmail={handleRegisterNotifyEmail}
+        userEmail={session.user.email || ''}
+        onSignOut={handleSignOut}
       />
 
       <MapComponent 
