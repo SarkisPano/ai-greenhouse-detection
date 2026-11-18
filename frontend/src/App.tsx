@@ -1394,11 +1394,8 @@ function App() {
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
         }}>
           <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-            <img src="/logo.png" alt="SUPER+" style={{ height: '64px', objectFit: 'contain', margin: '0 auto 0.75rem', display: 'block' }} />
-            <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>
-              SUPER+
-            </h1>
-            <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#9ca3af' }}>
+            <img src="/logo.png" alt="SUPER+" style={{ height: '64px', objectFit: 'contain', margin: '0 auto 0.65rem', display: 'block' }} />
+            <p style={{ margin: 0, fontSize: '0.88rem', color: '#9ca3af' }}>
               Detección Inteligente de Invernaderos
             </p>
           </div>
