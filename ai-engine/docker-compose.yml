@@ -22,6 +22,14 @@ services:
       - ROBOFLOW_API_KEY=${ROBOFLOW_API_KEY}
       - ROBOFLOW_PROJECT_ID=${ROBOFLOW_PROJECT_ID:-deteccion-de-invernaderos}
       - ROBOFLOW_VERSION=${ROBOFLOW_VERSION:-6}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://ai-greenhouse-detection.vercel.app}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - NOTIFY_FROM_EMAIL=${NOTIFY_FROM_EMAIL:-SUPER+ <onboarding@resend.dev>}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
     volumes:
       - .:/app
     depends_on:
@@ -39,6 +47,14 @@ services:
       - ROBOFLOW_API_KEY=${ROBOFLOW_API_KEY}
       - ROBOFLOW_PROJECT_ID=${ROBOFLOW_PROJECT_ID:-deteccion-de-invernaderos}
       - ROBOFLOW_VERSION=${ROBOFLOW_VERSION:-6}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://ai-greenhouse-detection.vercel.app}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - NOTIFY_FROM_EMAIL=${NOTIFY_FROM_EMAIL:-SUPER+ <onboarding@resend.dev>}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
     volumes:
       - .:/app
     depends_on:

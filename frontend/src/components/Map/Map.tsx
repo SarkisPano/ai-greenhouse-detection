@@ -16,7 +16,8 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
 interface MapComponentProps {
   onZoneUpdate: (areaHectares: number, geojson: any, isNewZone?: boolean) => void;
-  zoneToLoad: { geojson: any; timestamp: number } | null;
+  zoneToLoad: { geojson: any; customLabels?: any[]; timestamp: number } | null;
+  flyToTarget?: { center: [number, number]; zoom?: number; timestamp: number } | null;
   scanResult?: any;
   plasticPercent?: number;
   onDeleteDetection?: (featureId: string) => void;
@@ -32,7 +33,20 @@ interface MapComponentProps {
   isSwipeDrawing?: boolean;
   onCancelSwipeDraw?: () => void;
   frameViewTrigger?: number;
+  onCustomLabelsChange?: (labels: any[]) => void;
+  notifyEmail?: string;
+  onNotifyEmailChange?: (email: string) => void;
+  onRegisterNotifyEmail?: (email: string) => void;
+  notifyEmailSavedMsg?: string;
 }
+
+const formatHaLocal = (m2: number): string => {
+  const ha = (Number(m2) || 0) / 10000;
+  if (ha > 0 && ha < 0.1) {
+    return ha.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
+  return ha.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 interface SearchSuggestion {
   id: string;
@@ -43,7 +57,8 @@ interface SearchSuggestion {
 
 const MapComponent: React.FC<MapComponentProps> = ({ 
   onZoneUpdate, 
-  zoneToLoad, 
+  zoneToLoad,
+  flyToTarget,
   scanResult,
   plasticPercent = 0,
   onDeleteDetection,
@@ -57,12 +72,19 @@ const MapComponent: React.FC<MapComponentProps> = ({
   onToggleSidebar,
   isSwipeDrawing = false,
   onCancelSwipeDraw,
-  frameViewTrigger = 0
+  frameViewTrigger = 0,
+  onCustomLabelsChange,
+  notifyEmail = '',
+  onNotifyEmailChange,
+  onRegisterNotifyEmail,
+  notifyEmailSavedMsg = ''
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const draw = useRef<MapboxDraw | null>(null);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const updateCustomLabelsRef = useRef<((notifyParent?: boolean) => void) | null>(null);
+  const draggingTextIdRef = useRef<string | null>(null);
 
   const onZoneUpdateRef = useRef(onZoneUpdate);
   onZoneUpdateRef.current = onZoneUpdate;
@@ -70,6 +92,17 @@ const MapComponent: React.FC<MapComponentProps> = ({
   scanResultRef.current = scanResult;
   const isMobileRef = useRef(isMobile);
   isMobileRef.current = isMobile;
+  const isSwipeDrawingRef = useRef(isSwipeDrawing);
+  isSwipeDrawingRef.current = isSwipeDrawing;
+  const onCustomLabelsChangeRef = useRef(onCustomLabelsChange);
+  onCustomLabelsChangeRef.current = onCustomLabelsChange;
+  const [isScanModalMinimized, setIsScanModalMinimized] = useState(false);
+
+  useEffect(() => {
+    if (isScanning) {
+      setIsScanModalMinimized(false);
+    }
+  }, [isScanning]);
 
   // Estados para dibujo por deslizamiento con el dedo (Touch Swipe en Mobile)
   const [touchBox, setTouchBox] = useState<{ startX: number; startY: number; currX: number; currY: number } | null>(null);
@@ -96,8 +129,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const areaSquareMeters = area(polyCollection as any);
       const areaHectares = areaSquareMeters / 10000;
 
-      if (areaHectares > 120) {
-        alert(`⚠️ El área marcada es de ${Math.round(areaHectares)} hectáreas.\n\nPara garantizar máxima precisión en alta definición y procesar en segundos, el límite máximo por escaneo es de 120 ha.\n\nPor favor acercate con zoom sobre la finca para delimitar el lote.`);
+      if (areaHectares > 1500) {
+        alert(`⚠️ El área marcada es de ${Math.round(areaHectares)} hectáreas.\n\nEl límite máximo por escaneo en lotes es de 1.500 ha (~650 cuadrículas satelitales). Por favor delimitá un sector más acotado.`);
         return;
       }
 
@@ -242,11 +275,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
       (drawContainer as HTMLElement).style.display = 'none';
     }
 
-    const updateCustomLabels = () => {
+    const updateCustomLabels = (notifyParent = false) => {
       try {
         if (!draw.current) return;
         const data = draw.current.getAll();
         const labelFeatures: any[] = [];
+        const textFeaturesToPersist: any[] = [];
 
         data.features.forEach((f: any) => {
           if (f.geometry.type === 'LineString' && (!f.properties.mode || f.properties.mode === 'draw_line_string')) {
@@ -259,10 +293,17 @@ const MapComponent: React.FC<MapComponentProps> = ({
             });
           }
           if (f.geometry.type === 'Point' && f.properties.mode === 'draw_text') {
+            const fid = String(f.id || `txt_${Date.now()}`);
             labelFeatures.push({
               type: 'Feature',
               geometry: f.geometry,
-              properties: { text: f.properties.text, isText: true }
+              properties: { id: fid, text: f.properties.text, isText: true }
+            });
+            textFeaturesToPersist.push({
+              type: 'Feature',
+              id: fid,
+              geometry: f.geometry,
+              properties: { mode: 'draw_text', text: f.properties.text }
             });
           }
         });
@@ -271,15 +312,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
         if (labelsSource) {
           labelsSource.setData({ type: 'FeatureCollection', features: labelFeatures });
         }
+
+        if (notifyParent && onCustomLabelsChangeRef.current) {
+          onCustomLabelsChangeRef.current(textFeaturesToPersist);
+        }
       } catch (error) {
         console.error('Error al actualizar etiquetas:', error);
       }
     };
+    updateCustomLabelsRef.current = updateCustomLabels;
 
     const recalculateZonePolygon = (isNewZone = false) => {
       try {
         if (!draw.current) return;
-        updateCustomLabels();
+        updateCustomLabels(false);
         const data = draw.current.getAll();
         const polygonFeatures = data.features.filter(
           (f: any) => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
@@ -334,7 +380,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       if (e.features && e.features.length > 0) {
         const created = e.features[0];
         if (created.geometry?.type === 'LineString' || created.geometry?.type === 'Point') {
-          updateCustomLabels();
+          updateCustomLabels(created.geometry?.type === 'Point');
           return;
         }
         // Si dibujó un nuevo polígono de zona, eliminar polígonos de zona viejos para que siempre haya 1 sola zona activa limpia
@@ -354,7 +400,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const handleDrawUpdateOrDelete = (e: any) => {
       // Si solo se editó o borró una línea de regla o un texto, no reiniciar el escaneo de la zona
       if (e.features && e.features.length > 0 && e.features.every((f: any) => f.geometry?.type === 'LineString' || f.geometry?.type === 'Point')) {
-        updateCustomLabels();
+        const hasPoint = e.features.some((f: any) => f.geometry?.type === 'Point');
+        updateCustomLabels(hasPoint);
         return;
       }
       // Si hay un resultado de escaneo activo, ignorar arrastres accidentales sobre el polígono durante zoom/gestos
@@ -367,6 +414,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
     map.current.on('draw.create', handleDrawCreate);
     map.current.on('draw.delete', handleDrawUpdateOrDelete);
     map.current.on('draw.update', handleDrawUpdateOrDelete);
+    map.current.on('draw.render', () => {
+      updateCustomLabels(false);
+    });
 
     map.current.on('draw.text_prompt', (e: any) => {
       setTextPrompt({ lngLat: e.lngLat, visible: true });
@@ -386,10 +436,23 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       if (e.features && e.features.length === 1 && e.features[0].properties.mode === 'draw_text') {
         setSelectedTextFeature(e.features[0].id);
-      } else {
+      } else if (!draggingTextIdRef.current) {
         setSelectedTextFeature(null);
       }
     });
+
+    const stopTextDrag = () => {
+      if (!draggingTextIdRef.current) return;
+      draggingTextIdRef.current = null;
+      if (map.current && !isSwipeDrawingRef.current) {
+        map.current.dragPan.enable();
+        map.current.touchZoomRotate.enable();
+        map.current.getCanvas().style.cursor = '';
+      }
+      updateCustomLabels(true);
+    };
+    window.addEventListener('mouseup', stopTextDrag);
+    window.addEventListener('touchend', stopTextDrag);
 
     // Resize observer
     const resizeObserver = new ResizeObserver(() => {
@@ -400,17 +463,31 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
 
     return () => {
+      window.removeEventListener('mouseup', stopTextDrag);
+      window.removeEventListener('touchend', stopTextDrag);
       resizeObserver.disconnect();
       map.current?.remove();
       map.current = null;
     };
   }, []);
 
-  // Load saved zone
+  // Load saved zone & restored text labels
   useEffect(() => {
     if (zoneToLoad?.geojson && draw.current && map.current) {
       draw.current.deleteAll();
       draw.current.add(zoneToLoad.geojson);
+      if (Array.isArray(zoneToLoad.customLabels)) {
+        zoneToLoad.customLabels.forEach((lbl: any) => {
+          try {
+            if (lbl?.geometry?.type === 'Point') {
+              draw.current?.add(lbl);
+            }
+          } catch {
+            // ignore invalid label
+          }
+        });
+      }
+      updateCustomLabelsRef.current?.(false);
       try {
         const [minX, minY, maxX, maxY] = bbox(zoneToLoad.geojson);
         if (Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) {
@@ -424,6 +501,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   }, [zoneToLoad]);
 
+  // Fly to a newly added or empty town
+  useEffect(() => {
+    if (!flyToTarget || !map.current) return;
+    map.current.flyTo({
+      center: flyToTarget.center,
+      zoom: flyToTarget.zoom ?? 13.5,
+      duration: 1300
+    });
+  }, [flyToTarget]);
+
   // Add text label layer when map loads
   useEffect(() => {
     if (!map.current) return;
@@ -434,7 +521,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         data: { type: 'FeatureCollection', features: [] },
       });
 
-      // Text Layer
+      // Text Layer (centrado sobre su punto y movible con arrastre)
       map.current!.addLayer({
         id: 'text-labels-custom',
         type: 'symbol',
@@ -443,8 +530,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
         layout: {
           'text-field': ['get', 'text'],
           'text-size': 20,
-          'text-offset': [0, 0.8],
-          'text-anchor': 'top',
+          'text-offset': [0, 0],
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
         },
         paint: {
           'text-color': '#ffffff',
@@ -453,6 +542,66 @@ const MapComponent: React.FC<MapComponentProps> = ({
           'text-halo-blur': 1,
         },
       });
+
+      // Arrastre fluido del texto sobre el mapa (mouse y touch)
+      map.current!.on('mouseenter', 'text-labels-custom', () => {
+        if (map.current && !draggingTextIdRef.current) {
+          map.current.getCanvas().style.cursor = 'grab';
+        }
+      });
+
+      map.current!.on('mouseleave', 'text-labels-custom', () => {
+        if (map.current && !draggingTextIdRef.current) {
+          map.current.getCanvas().style.cursor = '';
+        }
+      });
+
+      const startTextDrag = (e: any) => {
+        if (!map.current || !draw.current || !e.features || e.features.length === 0) return;
+        const feat = e.features[0];
+        const fid = feat?.properties?.id || feat?.id;
+        if (!fid) return;
+        e.preventDefault();
+        draggingTextIdRef.current = String(fid);
+        setSelectedTextFeature(String(fid));
+        map.current.dragPan.disable();
+        map.current.touchZoomRotate.disable();
+        map.current.getCanvas().style.cursor = 'grabbing';
+      };
+
+      const moveTextDrag = (e: any) => {
+        if (!draggingTextIdRef.current || !draw.current || !e.lngLat) return;
+        const fid = draggingTextIdRef.current;
+        const existing = draw.current.get(fid);
+        if (existing) {
+          draw.current.add({
+            ...existing,
+            geometry: {
+              type: 'Point',
+              coordinates: [e.lngLat.lng, e.lngLat.lat]
+            }
+          });
+          updateCustomLabelsRef.current?.(false);
+        }
+      };
+
+      const endTextDrag = () => {
+        if (!draggingTextIdRef.current || !map.current) return;
+        draggingTextIdRef.current = null;
+        if (!isSwipeDrawingRef.current) {
+          map.current.dragPan.enable();
+          map.current.touchZoomRotate.enable();
+        }
+        map.current.getCanvas().style.cursor = '';
+        updateCustomLabelsRef.current?.(true);
+      };
+
+      map.current!.on('mousedown', 'text-labels-custom', startTextDrag);
+      map.current!.on('touchstart', 'text-labels-custom', startTextDrag);
+      map.current!.on('mousemove', moveTextDrag);
+      map.current!.on('touchmove', moveTextDrag);
+      map.current!.on('mouseup', endTextDrag);
+      map.current!.on('touchend', endTextDrag);
 
       // Ruler Distance Label Layer
       map.current!.addLayer({
@@ -489,6 +638,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         paint: {
           'fill-color': [
             'case',
+            ['boolean', ['get', 'isNew'], false], '#00E5FF',
             ['>', ['coalesce', ['get', 'confidence'], 0], 80], '#00C853',
             ['>=', ['coalesce', ['get', 'confidence'], 0], 50], '#FFD600',
             '#FF6D00'
@@ -507,11 +657,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
         paint: {
           'line-color': [
             'case',
+            ['boolean', ['get', 'isNew'], false], '#00E5FF',
             ['>', ['coalesce', ['get', 'confidence'], 0], 80], '#00C853',
             ['>=', ['coalesce', ['get', 'confidence'], 0], 50], '#FFD600',
             '#FF6D00'
           ],
-          'line-width': 2.5
+          'line-width': [
+            'case',
+            ['boolean', ['get', 'isNew'], false], 3.5,
+            2.5
+          ]
         }
       });
 
@@ -522,7 +677,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
         minzoom: 15.5,
         layout: {
           visibility: 'visible',
-          'text-field': ['concat', '#', ['to-string', ['coalesce', ['get', 'displayIndex'], '']]],
+          'text-field': [
+            'case',
+            ['boolean', ['get', 'isNew'], false],
+            ['concat', '#', ['to-string', ['coalesce', ['get', 'displayIndex'], '']], ' ★ NUEVO'],
+            ['concat', '#', ['to-string', ['coalesce', ['get', 'displayIndex'], '']]]
+          ],
           'text-size': 12,
           'text-allow-overlap': false,
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold']
@@ -548,7 +708,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         }
 
         const feature = e.features[0];
-        const { confidence, area_m2, id: featureId, isManual, displayIndex } = feature.properties || {};
+        const { confidence, area_m2, id: featureId, isManual, isNew, displayIndex } = feature.properties || {};
         const rawId = featureId !== undefined && featureId !== null && featureId !== '' ? featureId : feature.id;
         const fid = String(rawId ?? '');
         
@@ -558,7 +718,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         }
 
         const confText = isManual ? '100% (Manual)' : `${confidence}%`;
-        const badgeColor = confidence > 80 ? '#00C853' : confidence >= 50 ? '#FFD600' : '#FF6D00';
+        const badgeColor = isNew ? '#00E5FF' : (confidence > 80 ? '#00C853' : confidence >= 50 ? '#FFD600' : '#FF6D00');
         const titleText = displayIndex ? `Invernadero #${displayIndex}` : 'Invernadero';
         const numArea = Number(area_m2 || 0);
         const pct = plasticPercentRef.current || 0;
@@ -568,7 +728,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         popupNode.style.color = '#1f2937';
         popupNode.style.fontFamily = 'system-ui, -apple-system, sans-serif';
         popupNode.style.padding = '4px 2px';
-        popupNode.style.minWidth = '185px';
+        popupNode.style.minWidth = '205px';
 
         // Detener propagación en el nodo para que ningún clic o interacción llegue al canvas de Mapbox
         popupNode.addEventListener('click', (ev) => ev.stopPropagation());
@@ -578,16 +738,18 @@ const MapComponent: React.FC<MapComponentProps> = ({
         popupNode.innerHTML = `
           <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
             <span>${titleText}</span>
-            <span style="background: ${badgeColor}; color: ${confidence >= 50 && confidence <= 80 ? '#000' : '#fff'}; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 10px;">${confText}</span>
+            <span style="background: ${badgeColor}; color: ${(isNew || (confidence >= 50 && confidence <= 80)) ? '#000' : '#fff'}; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 10px;">
+              ${isNew ? '🆕 NUEVO · ' : ''}${confText}
+            </span>
           </div>
-          <div style="font-size: 13px; color: #4b5563; margin-bottom: ${pct > 0 ? '4px' : '10px'};">
-            Superficie: <strong style="color: #111827;">${numArea.toLocaleString()} m²</strong>
+          <div style="font-size: 13px; color: #4b5563; margin-bottom: 4px;">
+            Superficie: <strong style="color: #111827;">${numArea.toLocaleString()} m²</strong> <span style="color:#6b7280;font-size:11.5px;">(${formatHaLocal(numArea)} ha)</span>
           </div>
           ${pct > 0 ? `
           <div style="font-size: 12.5px; color: #059669; margin-bottom: 10px;">
-            Lona (+${pct}%): <strong>${lonaM2.toLocaleString()} m²</strong>
+            Lona (+${pct}%): <strong>${lonaM2.toLocaleString()} m²</strong> <span style="font-size:11.5px;">(${formatHaLocal(lonaM2)} ha)</span>
           </div>
-          ` : ''}
+          ` : '<div style="margin-bottom: 8px;"></div>'}
           <button id="btn-del-det" style="
             width: 100%;
             background: #ef4444;
@@ -950,15 +1112,19 @@ const MapComponent: React.FC<MapComponentProps> = ({
       // Editing existing feature
       draw.current.setFeatureProperty(textPrompt.featureId, 'text', textInput.trim());
       map.current.fire('draw.update', { features: [draw.current.get(textPrompt.featureId)] });
+      updateCustomLabelsRef.current?.(true);
     } else if (textPrompt.lngLat) {
       // Adding new feature
+      const newId = `txt_${Date.now()}`;
       const point: any = {
         type: 'Feature',
+        id: newId,
         geometry: { type: 'Point', coordinates: [textPrompt.lngLat.lng, textPrompt.lngLat.lat] },
         properties: { mode: 'draw_text', text: textInput.trim() }
       };
       draw.current.add(point);
       map.current.fire('draw.create', { features: [point] });
+      updateCustomLabelsRef.current?.(true);
     }
     
     setTextPrompt({ lngLat: null, visible: false });
@@ -1407,7 +1573,76 @@ const MapComponent: React.FC<MapComponentProps> = ({
         </div>
       )}
       
-      {isScanning && (
+      {isScanning && isScanModalMinimized && (
+        <div style={{
+          position: 'absolute',
+          top: isMobile ? '58px' : '64px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          backgroundColor: 'rgba(17, 24, 39, 0.96)',
+          border: '1px solid #10b981',
+          borderRadius: '12px',
+          padding: '8px 14px',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          maxWidth: '92vw'
+        }}>
+          <div style={{
+            width: '16px',
+            height: '16px',
+            border: '2px solid rgba(16, 185, 129, 0.25)',
+            borderTopColor: '#10b981',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            flexShrink: 0
+          }} />
+          <div style={{ fontSize: '12px', color: '#f9fafb', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            Escaneando ({scanProgress?.percent ?? 5}%) — {scanProgress?.text || 'Procesando...'}
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsScanModalMinimized(false)}
+            style={{
+              background: 'rgba(16, 185, 129, 0.2)',
+              border: '1px solid #10b981',
+              color: '#34d399',
+              borderRadius: '6px',
+              padding: '3px 8px',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              flexShrink: 0
+            }}
+          >
+            Detalles
+          </button>
+          {onCancelScan && (
+            <button
+              type="button"
+              onClick={onCancelScan}
+              style={{
+                background: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                color: '#fca5a5',
+                borderRadius: '6px',
+                padding: '3px 7px',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
+              title="Cancelar escaneo"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
+      {isScanning && !isScanModalMinimized && (
         <div style={{
           position: 'absolute',
           top: 0,
@@ -1428,30 +1663,30 @@ const MapComponent: React.FC<MapComponentProps> = ({
             backgroundColor: '#111827',
             border: '1px solid #374151',
             borderRadius: '14px',
-            padding: '1.75rem 2.25rem',
+            padding: '1.5rem 2rem',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
-            maxWidth: '430px',
-            width: '88%',
+            maxWidth: '450px',
+            width: '90%',
             textAlign: 'center',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: '1rem',
+            gap: '0.9rem',
             animation: 'fadeIn 0.25s ease'
           }}>
             <div style={{
-              width: '46px',
-              height: '46px',
+              width: '44px',
+              height: '44px',
               border: '3px solid rgba(16, 185, 129, 0.2)',
               borderTopColor: '#10b981',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite'
             }} />
             <div>
-              <h3 style={{ margin: 0, color: '#f9fafb', fontSize: '1.15rem', fontWeight: 600 }}>
+              <h3 style={{ margin: 0, color: '#f9fafb', fontSize: '1.12rem', fontWeight: 600 }}>
                 Escaneo IA en Curso ({scanProgress?.percent ?? 5}%)
               </h3>
-              <p style={{ margin: '0.45rem 0 0', color: '#9ca3af', fontSize: '0.85rem' }}>
+              <p style={{ margin: '0.45rem 0 0', color: '#9ca3af', fontSize: '0.84rem' }}>
                 {scanProgress?.text || 'Analizando imágenes satelitales en alta resolución...'}
               </p>
             </div>
@@ -1464,31 +1699,101 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 transition: 'width 0.4s ease'
               }} />
             </div>
-            {onCancelScan && (
+
+            {onNotifyEmailChange && onRegisterNotifyEmail && (
+              <div style={{
+                width: '100%',
+                backgroundColor: 'rgba(255,255,255,0.04)',
+                border: '1px solid #374151',
+                borderRadius: '10px',
+                padding: '0.75rem',
+                textAlign: 'left'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.4rem' }}>
+                  📧 ¿Querés salir de la app? Dejá tu mail y te avisamos al terminar
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <input
+                    type="email"
+                    value={notifyEmail}
+                    onChange={(e) => onNotifyEmailChange(e.target.value)}
+                    placeholder="tu-mail@ejemplo.com"
+                    style={{
+                      flex: 1,
+                      background: '#0f172a',
+                      border: '1px solid #4b5563',
+                      borderRadius: '6px',
+                      color: '#f9fafb',
+                      padding: '0.45rem 0.6rem',
+                      fontSize: '0.8rem',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onRegisterNotifyEmail(notifyEmail)}
+                    style={{
+                      background: '#10b981',
+                      border: 'none',
+                      color: '#ffffff',
+                      borderRadius: '6px',
+                      padding: '0 0.85rem',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Avisarme
+                  </button>
+                </div>
+                {notifyEmailSavedMsg && (
+                  <div style={{ fontSize: '0.72rem', color: '#34d399', marginTop: '0.35rem', fontWeight: 600 }}>
+                    {notifyEmailSavedMsg}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.6rem', width: '100%', justifyContent: 'center', flexWrap: 'wrap' }}>
               <button
                 type="button"
-                onClick={onCancelScan}
+                onClick={() => setIsScanModalMinimized(true)}
                 style={{
-                  marginTop: '0.4rem',
-                  padding: '0.5rem 1.25rem',
+                  padding: '0.5rem 1rem',
                   borderRadius: '6px',
-                  border: '1px solid rgba(239, 68, 68, 0.5)',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  color: '#fca5a5',
-                  fontSize: '0.85rem',
+                  border: '1px solid #374151',
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  color: '#e5e7eb',
+                  fontSize: '0.82rem',
                   fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  transition: 'all 0.2s ease'
+                  cursor: 'pointer'
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)')}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)')}
               >
-                ✕ Cancelar Escaneo
+                👁️ Ver mapa en vivo
               </button>
-            )}
+              {onCancelScan && (
+                <button
+                  type="button"
+                  onClick={onCancelScan}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    color: '#fca5a5',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  ✕ Cancelar Escaneo
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1501,9 +1806,31 @@ const MapComponent: React.FC<MapComponentProps> = ({
       )}
       
       {selectedTextFeature && !textPrompt.visible && (
-        <div className={styles.floatingEditBtn}>
+        <div className={styles.floatingEditBtn} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <span style={{
+            backgroundColor: 'rgba(17, 24, 39, 0.92)',
+            color: '#d1d5db',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            border: '1px solid #374151'
+          }}>
+            ✥ Arrastrá el texto para moverlo
+          </span>
           <button onClick={openEditModal}>
             ✏️ Editar Texto
+          </button>
+          <button
+            onClick={() => {
+              if (draw.current && selectedTextFeature) {
+                draw.current.delete(selectedTextFeature);
+                setSelectedTextFeature(null);
+                updateCustomLabelsRef.current?.(true);
+              }
+            }}
+            style={{ borderColor: '#ef4444', color: '#fca5a5' }}
+          >
+            🗑️ Borrar
           </button>
         </div>
       )}

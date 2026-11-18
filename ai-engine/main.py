@@ -7,17 +7,23 @@ import json
 import os
 import threading
 import time
-from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+import redis as redis_lib
+from config import SUPABASE_URL, SUPABASE_SERVICE_KEY, REDIS_URL
 from supabase import create_client
 from tasks import process_ai_scan
 
 app = FastAPI(title="AI Greenhouse Engine API")
 
-# Cliente Supabase singleton
+# Cliente Supabase singleton y Redis
 supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+redis_client = redis_lib.from_url(REDIS_URL, decode_responses=True)
 
 # Registro en memoria de escaneos encolados para no duplicar tareas
 enqueued_scans = set()
+
+
+class NotifyEmailRequest(BaseModel):
+    email: str
 
 # Nota: Los encabezados CORS los inyecta Caddy a nivel de proxy inverso.
 # No agregamos CORSMiddleware aquí para evitar duplicar el encabezado 'Access-Control-Allow-Origin: *, *'.
@@ -55,6 +61,20 @@ def enqueue_scan_job(scan_id: str, zone_id: str) -> bool:
         area_ha = zone.get('area_ha', 0)
         geom = zone.get('geom', {})
 
+        # Resguardar notify_email en Redis antes de que el worker sobreescriba el progreso parcial
+        try:
+            scan_data = supabase_client.table('ai_scans').select('result_geojson').eq('id', scan_id).execute()
+            if scan_data.data:
+                res_json = scan_data.data[0].get('result_geojson')
+                if isinstance(res_json, dict) and res_json.get('notify_email'):
+                    redis_client.set(
+                        f"scan_notify_email:{scan_id}",
+                        str(res_json.get('notify_email')).strip(),
+                        ex=86400,
+                    )
+        except Exception as meta_err:
+            print(f"[Dispatcher] No se pudo leer metadata inicial de {scan_id}: {meta_err}")
+
         enqueued_scans.add(scan_id)
         print(f"[Dispatcher] Encolando tarea Celery para scan {scan_id} (Zona {zone_id})...")
         process_ai_scan.delay(scan_id, zone_id, geom, area_ha)
@@ -62,6 +82,30 @@ def enqueue_scan_job(scan_id: str, zone_id: str) -> bool:
     except Exception as e:
         print(f"[Dispatcher] Error al encolar scan {scan_id}: {e}")
         return False
+
+
+@app.post("/scans/{scan_id}/notify-email")
+def set_scan_notify_email(scan_id: str, body: NotifyEmailRequest):
+    """
+    Registra o actualiza en caliente el email de notificación para un escaneo en curso.
+    """
+    clean_email = (body.email or "").strip()
+    if not clean_email or "@" not in clean_email:
+        return {"status": "error", "reason": "Email inválido"}
+
+    try:
+        redis_client.set(f"scan_notify_email:{scan_id}", clean_email, ex=86400)
+        scan_row = supabase_client.table('ai_scans').select('status, result_geojson').eq('id', scan_id).execute()
+        if scan_row.data:
+            row = scan_row.data[0]
+            if row.get('status') in ('pending', 'processing'):
+                curr_res = row.get('result_geojson') if isinstance(row.get('result_geojson'), dict) else {}
+                curr_res['notify_email'] = clean_email
+                supabase_client.table('ai_scans').update({'result_geojson': curr_res}).eq('id', scan_id).execute()
+        return {"status": "ok", "scan_id": scan_id, "email": clean_email}
+    except Exception as e:
+        print(f"[NotifyEmail] Error guardando email para {scan_id}: {e}")
+        return {"status": "error", "reason": str(e)}
 
 
 @app.post("/webhook/scans")
