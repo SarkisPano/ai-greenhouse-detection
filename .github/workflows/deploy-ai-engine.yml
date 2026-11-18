@@ -74,12 +74,15 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
         run: |
           SSH_PORT="${VPS_PORT:-22}"
           ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            "$VPS_USER@$VPS_HOST" bash -s -- "$VPS_APP_DIR" << 'EOF'
+            "$VPS_USER@$VPS_HOST" bash -s -- "$VPS_APP_DIR" "$SMTP_PASS" << 'EOF'
           set -euo pipefail
           TARGET_DIR="${1/#\~/$HOME}"
+          SMTP_PASS_VAL="${2:-}"
+          SMTP_PASS_VAL="${SMTP_PASS_VAL// /}"
           cd "$TARGET_DIR"
 
           if [ -d .git ]; then
@@ -101,6 +104,21 @@ jobs:
           fi
 
           cd "$ENGINE_DIR"
+
+          if [ -n "$SMTP_PASS_VAL" ]; then
+            touch .env
+            awk '!/^(SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASS|SMTP_FROM)=/ { print }' .env > .env.tmp
+            mv .env.tmp .env
+            {
+              echo "SMTP_HOST=smtp.gmail.com"
+              echo "SMTP_PORT=587"
+              echo "SMTP_USER=notifications.retails@gmail.com"
+              echo "SMTP_PASS=${SMTP_PASS_VAL}"
+              echo "SMTP_FROM=SUPER+ <notifications.retails@gmail.com>"
+            } >> .env
+            echo "Configuración SMTP actualizada en .env"
+          fi
+
           if docker compose version >/dev/null 2>&1; then
             COMPOSE_CMD="docker compose"
           else
