@@ -867,6 +867,11 @@ function App() {
   };
 
   const handleDeleteZone = async (id: string) => {
+    const target = savedZones.find(z => z.id === id);
+    const label = target?.name ? `"${target.name}"` : 'esta zona';
+    if (!window.confirm(`¿Estás seguro de que querés eliminar ${label} y su historial de escaneos?`)) {
+      return;
+    }
     const { error } = await supabase.from('zones').delete().eq('id', id);
     if (!error) {
       if (activeZoneId === id) {
@@ -938,6 +943,9 @@ function App() {
       return;
     }
     if (!town.catalogZoneId) return;
+    if (!window.confirm(`¿Querés quitar el pueblo "${town.name}" de la lista?`)) {
+      return;
+    }
     const { error } = await supabase.from('zones').delete().eq('id', town.catalogZoneId);
     if (!error) {
       if (selectedTown.toLowerCase() === town.name.toLowerCase()) {

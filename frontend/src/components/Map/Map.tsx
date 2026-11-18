@@ -48,6 +48,15 @@ const formatHaLocal = (m2: number): string => {
   return ha.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
+const escapeHtml = (val: unknown): string => {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 interface SearchSuggestion {
   id: string;
   place_name: string;
@@ -735,11 +744,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
         popupNode.addEventListener('mousedown', (ev) => ev.stopPropagation());
         popupNode.addEventListener('touchstart', (ev) => ev.stopPropagation());
 
+        const safeTitleText = escapeHtml(titleText);
+        const safeConfText = escapeHtml(confText);
+
         popupNode.innerHTML = `
           <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-            <span>${titleText}</span>
+            <span>${safeTitleText}</span>
             <span style="background: ${badgeColor}; color: ${(isNew || (confidence >= 50 && confidence <= 80)) ? '#000' : '#fff'}; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 10px;">
-              ${isNew ? '🆕 NUEVO · ' : ''}${confText}
+              ${isNew ? '🆕 NUEVO · ' : ''}${safeConfText}
             </span>
           </div>
           <div style="font-size: 13px; color: #4b5563; margin-bottom: 4px;">

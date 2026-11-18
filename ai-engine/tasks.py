@@ -1,5 +1,8 @@
 from celery import Celery
+from celery.exceptions import SoftTimeLimitExceeded
 import gc
+import html
+import re
 import time
 import math
 import io
@@ -398,6 +401,9 @@ def _clean_display_zone_name(raw_name: str) -> str:
     return raw_name
 
 
+EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
 def send_scan_completion_email(
     to_email: str,
     zone_name: str,
@@ -409,16 +415,19 @@ def send_scan_completion_email(
     plastic_percent: float,
     has_comparison: bool = False,
 ):
-    if not to_email or "@" not in to_email:
+    clean_to = (to_email or "").strip()
+    if not clean_to or len(clean_to) > 254 or not EMAIL_REGEX.match(clean_to):
         return
 
     clean_zone = _clean_display_zone_name(zone_name)
     total_area_ha = total_area_m2 / 10000.0
     lona_m2 = round(total_area_m2 * (1.0 + (plastic_percent or 0.0) / 100.0))
     lona_ha = lona_m2 / 10000.0
-    title_place = f"{town_name} — {clean_zone}" if town_name else clean_zone
+    raw_title_place = f"{town_name} — {clean_zone}" if town_name else clean_zone
+    safe_title_place = html.escape(raw_title_place, quote=True)
+    safe_app_url = html.escape(APP_PUBLIC_URL, quote=True)
 
-    subject = f"SUPER+ | Escaneo finalizado: {title_place} ({count} invernaderos)"
+    subject = f"SUPER+ | Escaneo finalizado: {raw_title_place} ({count} invernaderos)"
     new_row_html = (
         f"<tr><td style='padding:8px 0;color:#94a3b8;'>Invernaderos nuevos</td>"
         f"<td style='padding:8px 0;text-align:right;font-weight:700;color:#00e5ff;'>+{new_count} nuevos</td></tr>"
@@ -434,7 +443,7 @@ def send_scan_completion_email(
         </div>
         <h2 style="margin:8px 0 4px;color:#ffffff;font-size:20px;">¡Escaneo completado con éxito!</h2>
         <p style="margin:0 0 18px;color:#cbd5e1;font-size:14px;">
-          El procesamiento satelital de <strong>{title_place}</strong> ya terminó y los resultados quedaron guardados en tu panel.
+          El procesamiento satelital de <strong>{safe_title_place}</strong> ya terminó y los resultados quedaron guardados en tu panel.
         </p>
         <table style="width:100%;border-collapse:collapse;font-size:14px;border-top:1px solid #334155;border-bottom:1px solid #334155;">
           <tr>
@@ -456,7 +465,7 @@ def send_scan_completion_email(
           </tr>
         </table>
         <div style="margin-top:20px;text-align:center;">
-          <a href="{APP_PUBLIC_URL}" style="display:inline-block;background:#10b981;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:8px;font-size:14px;">
+          <a href="{safe_app_url}" style="display:inline-block;background:#10b981;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:8px;font-size:14px;">
             Ver resultados en SUPER+
           </a>
         </div>
@@ -474,14 +483,14 @@ def send_scan_completion_email(
                 },
                 json={
                     "from": NOTIFY_FROM_EMAIL,
-                    "to": [to_email],
+                    "to": [clean_to],
                     "subject": subject,
                     "html": html_body,
                 },
                 timeout=15,
             )
             if 200 <= r.status_code < 300:
-                print(f"[Email] Notificación enviada vía Resend a {to_email}")
+                print(f"[Email] Notificación enviada vía Resend a {clean_to}")
                 return
             print(f"[Email] Error Resend ({r.status_code}): {r.text}")
         except Exception as e:
@@ -492,9 +501,9 @@ def send_scan_completion_email(
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
             msg["From"] = SMTP_FROM or SMTP_USER
-            msg["To"] = to_email
+            msg["To"] = clean_to
             text_part = (
-                f"SUPER+ - Escaneo finalizado: {title_place}\n"
+                f"SUPER+ - Escaneo finalizado: {raw_title_place}\n"
                 f"Invernaderos: {count} (Nuevos: {new_count})\n"
                 f"Superficie: {total_area_m2:,.1f} m2 ({total_area_ha:,.2f} ha)\n"
                 f"Lona (+{int(plastic_percent)}%): {lona_m2:,.0f} m2 ({lona_ha:,.2f} ha)\n"
@@ -505,13 +514,13 @@ def send_scan_completion_email(
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
                 server.starttls()
                 server.login(SMTP_USER, SMTP_PASS)
-                server.sendmail(msg["From"], [to_email], msg.as_string())
-            print(f"[Email] Notificación enviada vía SMTP a {to_email}")
+                server.sendmail(msg["From"], [clean_to], msg.as_string())
+            print(f"[Email] Notificación enviada vía SMTP a {clean_to}")
             return
         except Exception as e:
             print(f"[Email] Excepción enviando vía SMTP: {e}")
 
-    print(f"[Email] Aviso pendiente para {to_email}, pero faltan configurar RESEND_API_KEY o SMTP_* en el servidor.")
+    print(f"[Email] Aviso pendiente para {clean_to}, pero faltan configurar RESEND_API_KEY o SMTP_* en el servidor.")
 
 
 def fetch_mapbox_tile(idx: int, c_lon: float, c_lat: float):
@@ -528,9 +537,43 @@ def fetch_mapbox_tile(idx: int, c_lon: float, c_lat: float):
     return idx, c_lon, c_lat, None
 
 
-@app.task(name='process_ai_scan')
+@app.task(name='process_ai_scan', time_limit=1800, soft_time_limit=1500)
 def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
+    try:
+        return _run_ai_scan(scan_id, zone_id, geojson, area_ha)
+    except SoftTimeLimitExceeded:
+        print(f"[{scan_id}] Tiempo límite de procesamiento excedido (25 min).")
+        from datetime import datetime, timezone
+        try:
+            supabase.table('ai_scans').update({
+                'status': 'failed',
+                'completed_at': datetime.now(timezone.utc).isoformat()
+            }).eq('id', scan_id).execute()
+        except Exception as db_err:
+            print(f"[{scan_id}] Error actualizando estado failed por timeout: {db_err}")
+        try:
+            redis_client.delete(f"scan_heartbeat:{scan_id}", f"scan_zombie_retries:{scan_id}")
+        except Exception:
+            pass
+        return {'status': 'error', 'reason': 'Tiempo máximo de procesamiento excedido (25 min)'}
+
+
+def _run_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
     print(f"[{scan_id}] Iniciando escaneo de la zona {zone_id}...")
+
+    def refresh_heartbeat():
+        try:
+            redis_client.set(f"scan_heartbeat:{scan_id}", str(int(time.time())), ex=240)
+        except Exception:
+            pass
+
+    def clear_heartbeat():
+        try:
+            redis_client.delete(f"scan_heartbeat:{scan_id}", f"scan_zombie_retries:{scan_id}")
+        except Exception:
+            pass
+
+    refresh_heartbeat()
 
     # Recuperar metadatos iniciales (pueblo, detecciones previas para comparar, email de aviso, etiquetas)
     initial_meta = {}
@@ -572,6 +615,7 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
         return initial_notify_email
 
     def update_scan_progress(percent: int, text: str, partial_features=None):
+        refresh_heartbeat()
         try:
             current_email = get_latest_notify_email()
             payload_geo = {
@@ -605,6 +649,7 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
 
     def mark_scan_failed(reason: str):
         print(f"[{scan_id}] Escaneo fallido: {reason}")
+        clear_heartbeat()
         try:
             from datetime import datetime, timezone
             supabase.table('ai_scans').update({
@@ -666,6 +711,7 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
     for batch_idx in range(total_batches):
         if is_scan_cancelled():
             print(f"[{scan_id}] Escaneo cancelado por el usuario. Liberando CPU...")
+            clear_heartbeat()
             return {'status': 'cancelled'}
 
         start_idx = batch_idx * BATCH_SIZE
@@ -688,6 +734,7 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
             tiles_processed += 1
             if is_scan_cancelled():
                 print(f"[{scan_id}] Escaneo cancelado por el usuario. Liberando CPU...")
+                clear_heartbeat()
                 if img is not None:
                     try:
                         img.close()
@@ -1133,6 +1180,8 @@ def process_ai_scan(scan_id: str, zone_id: str, geojson: dict, area_ha: float):
         'result_geojson': result_geojson,
         'completed_at': now
     }).eq('id', scan_id).execute()
+
+    clear_heartbeat()
 
     if final_email:
         send_scan_completion_email(

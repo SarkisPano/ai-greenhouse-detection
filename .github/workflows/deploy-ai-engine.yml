@@ -107,7 +107,7 @@ jobs:
             COMPOSE_CMD="docker-compose"
           fi
 
-          $COMPOSE_CMD up -d --build --force-recreate api worker
+          $COMPOSE_CMD up -d --build --force-recreate redis api worker
 
           for i in $(seq 1 20); do
             if command -v curl >/dev/null 2>&1; then

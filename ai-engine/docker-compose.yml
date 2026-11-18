@@ -3,8 +3,7 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     volumes:
       - redis_data:/data
 
@@ -13,7 +12,7 @@ services:
     restart: unless-stopped
     command: uvicorn main:app --host 0.0.0.0 --port 5000
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     environment:
       - REDIS_URL=redis://redis:6379/0
       - SUPABASE_URL=${SUPABASE_URL:-http://host.docker.internal:8000}
@@ -55,10 +54,13 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_FROM=${SMTP_FROM:-}
+      - MODEL_CACHE_DIR=/tmp/cache
     volumes:
       - .:/app
+      - model_cache:/tmp/cache
     depends_on:
       - redis
 
 volumes:
   redis_data:
+  model_cache:
