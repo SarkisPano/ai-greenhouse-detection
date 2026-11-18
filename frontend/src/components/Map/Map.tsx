@@ -106,10 +106,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const onCustomLabelsChangeRef = useRef(onCustomLabelsChange);
   onCustomLabelsChangeRef.current = onCustomLabelsChange;
   const [isScanModalMinimized, setIsScanModalMinimized] = useState(false);
+  const [showEmailFormInModal, setShowEmailFormInModal] = useState(false);
 
   useEffect(() => {
     if (isScanning) {
       setIsScanModalMinimized(false);
+      setShowEmailFormInModal(!notifyEmail.trim());
     }
   }, [isScanning]);
 
@@ -1713,57 +1715,77 @@ const MapComponent: React.FC<MapComponentProps> = ({
             </div>
 
             {onNotifyEmailChange && onRegisterNotifyEmail && (
-              <div style={{
-                width: '100%',
-                backgroundColor: 'rgba(255,255,255,0.04)',
-                border: '1px solid #374151',
-                borderRadius: '10px',
-                padding: '0.75rem',
-                textAlign: 'left'
-              }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.4rem' }}>
-                  📧 ¿Querés salir de la app? Dejá tu mail y te avisamos al terminar
-                </div>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <input
-                    type="email"
-                    value={notifyEmail}
-                    onChange={(e) => onNotifyEmailChange(e.target.value)}
-                    placeholder="tu-mail@ejemplo.com"
-                    style={{
-                      flex: 1,
-                      background: '#0f172a',
-                      border: '1px solid #4b5563',
-                      borderRadius: '6px',
-                      color: '#f9fafb',
-                      padding: '0.45rem 0.6rem',
-                      fontSize: '0.8rem',
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => onRegisterNotifyEmail(notifyEmail)}
-                    style={{
-                      background: '#10b981',
-                      border: 'none',
-                      color: '#ffffff',
-                      borderRadius: '6px',
-                      padding: '0 0.85rem',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Avisarme
-                  </button>
-                </div>
-                {notifyEmailSavedMsg && (
-                  <div style={{ fontSize: '0.72rem', color: '#34d399', marginTop: '0.35rem', fontWeight: 600 }}>
-                    {notifyEmailSavedMsg}
+              showEmailFormInModal ? (
+                <div style={{
+                  width: '100%',
+                  backgroundColor: 'rgba(255,255,255,0.04)',
+                  border: '1px solid #374151',
+                  borderRadius: '10px',
+                  padding: '0.75rem',
+                  textAlign: 'left'
+                }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.4rem' }}>
+                    📧 ¿Querés salir de la app? Dejá tu mail y te avisamos al terminar
                   </div>
-                )}
-              </div>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <input
+                      type="email"
+                      value={notifyEmail}
+                      onChange={(e) => onNotifyEmailChange(e.target.value)}
+                      placeholder="tu-mail@ejemplo.com"
+                      style={{
+                        flex: 1,
+                        background: '#0f172a',
+                        border: '1px solid #4b5563',
+                        borderRadius: '6px',
+                        color: '#f9fafb',
+                        padding: '0.45rem 0.6rem',
+                        fontSize: '0.8rem',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onRegisterNotifyEmail(notifyEmail);
+                        if (notifyEmail.trim().includes('@')) {
+                          setShowEmailFormInModal(false);
+                        }
+                      }}
+                      style={{
+                        background: '#10b981',
+                        border: 'none',
+                        color: '#ffffff',
+                        borderRadius: '6px',
+                        padding: '0 0.85rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Avisarme
+                    </button>
+                  </div>
+                  {notifyEmailSavedMsg && (
+                    <div style={{ fontSize: '0.72rem', color: '#34d399', marginTop: '0.35rem', fontWeight: 600 }}>
+                      {notifyEmailSavedMsg}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{
+                  width: '100%',
+                  backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  borderRadius: '8px',
+                  padding: '0.55rem 0.75rem',
+                  fontSize: '0.76rem',
+                  color: '#34d399',
+                  fontWeight: 600
+                }}>
+                  ✓ Te avisaremos a <strong style={{ color: '#ecfdf5' }}>{notifyEmail.trim()}</strong> al terminar. Podés salir de la app.
+                </div>
+              )
             )}
 
             <div style={{ display: 'flex', gap: '0.6rem', width: '100%', justifyContent: 'center', flexWrap: 'wrap' }}>
