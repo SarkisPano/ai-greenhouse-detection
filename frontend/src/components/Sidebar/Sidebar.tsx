@@ -516,6 +516,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
                     <p style={{ margin: 0, fontSize: '0.82rem', color: '#d1d5db' }}>
                       {zone.areaHa.toLocaleString(undefined, { maximumFractionDigits: 2 })} ha
+                      {zone.lastScanAreaM2 !== undefined && (
+                        <>
+                          {' · '}
+                          <span style={{ color: '#34d399', fontWeight: 600 }}>
+                            {formatAreaHa(zone.lastScanAreaM2)} ha cubiertas
+                          </span>
+                        </>
+                      )}
                       {zone.lastScanCount !== undefined ? ` · ${zone.lastScanCount} inv.` : ''}
                     </p>
                     {zone.townName && (
